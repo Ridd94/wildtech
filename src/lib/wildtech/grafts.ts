@@ -10,98 +10,496 @@ export type CharacterGraft = {
   id: string;
   name: string;
   sourceEnemy: string;
-  statBoost: StatMods;
   ability: string;
+  statBoost: StatMods;
   mutationCost: number;
   humanityLoss: number;
 };
 
 export const GRAFT_CATALOG: CharacterGraft[] = [
   {
-    id: "laser-eye",
-    name: "Laser Eye",
-    sourceEnemy: "Mutated sentry, optic horror, corrupted surveillance beast",
-    statBoost: { TEC: 2 },
-    ability: "Gain a ranged beam attack that can mark or burn a target.",
-    mutationCost: 1,
+    id: "cybernetic-laser-eye",
+    name: "Cybernetic Laser Eye",
+    sourceEnemy: "Optic Revenant",
+    ability: "Fire a focused beam that marks weak points through smoke and darkness.",
+    statBoost: { TEC: 2, ATT: 1 },
+    mutationCost: 2,
     humanityLoss: 1,
   },
   {
-    id: "gun-fused-arm",
-    name: "Gun-Fused Arm",
-    sourceEnemy: "War-relic mutant with a firearm grown into bone and steel",
+    id: "bone-rifle-arm",
+    name: "Bone Rifle Arm",
+    sourceEnemy: "Marrow Gunner",
+    ability: "Your forearm unfolds into a living rifle that never truly runs dry.",
     statBoost: { ATT: 2 },
-    ability: "Gain a built-in ballistic attack; cannot be disarmed normally.",
     mutationCost: 2,
     humanityLoss: 1,
   },
   {
-    id: "crawler-tendons",
-    name: "Crawler Tendons",
-    sourceEnemy: "Wall-running maintenance aberration",
-    statBoost: { DEF: 1 },
-    ability: "Climb vertical surfaces and ignore some movement penalties.",
+    id: "spider-spine",
+    name: "Spider Spine",
+    sourceEnemy: "Sprawl Widow",
+    ability: "Deploy stabilizing rear limbs to climb walls and brace against recoil.",
+    statBoost: { DEF: 1, TEC: 1 },
+    mutationCost: 2,
+    humanityLoss: 1,
+  },
+  {
+    id: "neural-parasite",
+    name: "Neural Parasite",
+    sourceEnemy: "Static Leech",
+    ability: "Latch into hostile signals and briefly hijack nearby systems.",
+    statBoost: { TEC: 2, CHA: -1 },
+    mutationCost: 3,
+    humanityLoss: 2,
+  },
+  {
+    id: "shock-maw",
+    name: "Shock Maw",
+    sourceEnemy: "Wire Hound",
+    ability: "A crackling bite discharges stored current into close targets.",
+    statBoost: { ATT: 1, HEA: 1 },
+    mutationCost: 2,
+    humanityLoss: 1,
+  },
+  {
+    id: "servo-tendon-weave",
+    name: "Servo Tendon Weave",
+    sourceEnemy: "Factory Strider",
+    ability: "Micro-servos reinforce muscle pulls for brutal bursts of force.",
+    statBoost: { ATT: 1, DEF: 1 },
     mutationCost: 1,
     humanityLoss: 1,
   },
   {
-    id: "shock-spine",
-    name: "Shock Spine",
-    sourceEnemy: "Cable-fed electro-mutant",
-    statBoost: { TEC: 1, ATT: 1 },
-    ability: "Discharge static into melee attackers or power dead machinery briefly.",
-    mutationCost: 2,
-    humanityLoss: 2,
-  },
-  {
-    id: "reinforced-organ-sack",
-    name: "Reinforced Organ Sack",
-    sourceEnemy: "Industrial butcher-beast, vat-grown tank organism",
-    statBoost: { HEA: 3 },
-    ability: "Reduce severe injury once per encounter.",
+    id: "amalgam-hide",
+    name: "Amalgam Hide",
+    sourceEnemy: "Gutter Amalgam",
+    ability: "Patchwork plating hardens under stress and sheds glancing blows.",
+    statBoost: { DEF: 2 },
     mutationCost: 2,
     humanityLoss: 1,
   },
   {
-    id: "predator-jaw-assembly",
-    name: "Predator Jaw Assembly",
-    sourceEnemy: "Ferals, sewer hunters, bio-metal scavengers",
-    statBoost: { ATT: 1 },
-    ability: "Gain a brutal close-range bite attack and intimidation edge.",
+    id: "echo-lung",
+    name: "Echo Lung",
+    sourceEnemy: "Tunnel Howler",
+    ability: "Exhale a disorienting sonic burst that rattles nerves and glass.",
+    statBoost: { CHA: 1, HEA: 1 },
+    mutationCost: 2,
+    humanityLoss: 1,
+  },
+  {
+    id: "phase-knuckles",
+    name: "Phase Knuckles",
+    sourceEnemy: "Blink Bruiser",
+    ability: "Your fists flicker through guard lines before solidifying on impact.",
+    statBoost: { ATT: 2 },
+    mutationCost: 2,
+    humanityLoss: 1,
+  },
+  {
+    id: "memory-cyst",
+    name: "Memory Cyst",
+    sourceEnemy: "Archive Eater",
+    ability: "Store flashes of enemy movement and replay them as predictive instinct.",
+    statBoost: { TEC: 1, CHA: 1 },
     mutationCost: 1,
+    humanityLoss: 1,
+  },
+  {
+    id: "carrion-filament-hair",
+    name: "Carrion Filament Hair",
+    sourceEnemy: "Signal Corpse",
+    ability: "Hair-thin tendrils sense motion in stale air and nearby vibrations.",
+    statBoost: { TEC: 1, DEF: 1 },
+    mutationCost: 1,
+    humanityLoss: 1,
+  },
+  {
+    id: "scavenger-gizzard",
+    name: "Scavenger Gizzard",
+    sourceEnemy: "Rust Feeder",
+    ability: "Digest tainted water and spoiled rations without folding instantly.",
+    statBoost: { HEA: 2 },
+    mutationCost: 1,
+    humanityLoss: 1,
+  },
+  {
+    id: "hex-grid-skin",
+    name: "Hex Grid Skin",
+    sourceEnemy: "Shield Drone Saint",
+    ability: "Your skin flashes a hex-pattern barrier for a heartbeat when struck.",
+    statBoost: { DEF: 2, TEC: 1 },
+    mutationCost: 3,
+    humanityLoss: 1,
+  },
+  {
+    id: "rail-tongue",
+    name: "Rail Tongue",
+    sourceEnemy: "Track Licker",
+    ability: "A whip-fast metallic tongue can retrieve small gear or lash at close range.",
+    statBoost: { ATT: 1, CHA: 1 },
+    mutationCost: 2,
+    humanityLoss: 1,
+  },
+  {
+    id: "grave-sight-retina",
+    name: "Grave-Sight Retina",
+    sourceEnemy: "Morgue Oracle",
+    ability: "See body heat, fading footprints, and recent violence in the environment.",
+    statBoost: { TEC: 2 },
+    mutationCost: 2,
+    humanityLoss: 1,
+  },
+  {
+    id: "rebar-horns",
+    name: "Rebar Horns",
+    sourceEnemy: "Concrete Bull",
+    ability: "Lower your head and drive through cover or crowds with ugly momentum.",
+    statBoost: { ATT: 1, DEF: 1 },
+    mutationCost: 2,
+    humanityLoss: 1,
+  },
+  {
+    id: "suture-swarm",
+    name: "Suture Swarm",
+    sourceEnemy: "Patchmother",
+    ability: "Microfilaments stitch your wounds shut in the middle of a fight.",
+    statBoost: { HEA: 2, DEF: 1 },
+    mutationCost: 3,
     humanityLoss: 2,
+  },
+  {
+    id: "glass-vein-network",
+    name: "Glass Vein Network",
+    sourceEnemy: "Shard Saint",
+    ability: "Transparent veins refract light and make your movements harder to read.",
+    statBoost: { DEF: 1, CHA: 1 },
+    mutationCost: 2,
+    humanityLoss: 1,
+  },
+  {
+    id: "boiler-heart",
+    name: "Boiler Heart",
+    sourceEnemy: "Steam Butcher",
+    ability: "Overpressure your system for a violent surge of speed and aggression.",
+    statBoost: { ATT: 2, HEA: 1 },
+    mutationCost: 3,
+    humanityLoss: 2,
+  },
+  {
+    id: "hush-gland",
+    name: "Hush Gland",
+    sourceEnemy: "Silent Choir",
+    ability: "Deadens your footsteps and muffles nearby movement for a brief window.",
+    statBoost: { TEC: 1, CHA: 1 },
+    mutationCost: 1,
+    humanityLoss: 1,
+  },
+  {
+    id: "coil-rib-cage",
+    name: "Coil Rib Cage",
+    sourceEnemy: "Metro Eel",
+    ability: "Store charge in your torso and release it in a defensive arc.",
+    statBoost: { DEF: 1, TEC: 2 },
+    mutationCost: 2,
+    humanityLoss: 1,
+  },
+  {
+    id: "flare-glands",
+    name: "Flare Glands",
+    sourceEnemy: "Street Basilisk",
+    ability: "Emit a blinding chemical flash from vents along the neck and jaw.",
+    statBoost: { CHA: 1, TEC: 1 },
+    mutationCost: 2,
+    humanityLoss: 1,
+  },
+  {
+    id: "pit-viper-vertebrae",
+    name: "Pit Viper Vertebrae",
+    sourceEnemy: "Pit Viper Saint",
+    ability: "Your spine whips with predatory flexibility, improving dodges and lunges.",
+    statBoost: { ATT: 1, DEF: 1 },
+    mutationCost: 2,
+    humanityLoss: 1,
+  },
+  {
+    id: "static-beard",
+    name: "Static Beard",
+    sourceEnemy: "Breaker Hermit",
+    ability: "Fine conductive whiskers detect active current and humming machinery.",
+    statBoost: { TEC: 2 },
+    mutationCost: 1,
+    humanityLoss: 1,
+  },
+  {
+    id: "waste-filter-kidney",
+    name: "Waste Filter Kidney",
+    sourceEnemy: "Purple Drinker",
+    ability: "Process toxins faster and shrug off low-grade contamination.",
+    statBoost: { HEA: 2 },
+    mutationCost: 1,
+    humanityLoss: 1,
+  },
+  {
+    id: "riot-anchor-shoulder",
+    name: "Riot Anchor Shoulder",
+    sourceEnemy: "Checkpoint Ogre",
+    ability: "A reinforced shoulder lets you absorb impacts and smash through barricades.",
+    statBoost: { DEF: 2, ATT: 1 },
+    mutationCost: 2,
+    humanityLoss: 1,
+  },
+  {
+    id: "lantern-organ",
+    name: "Lantern Organ",
+    sourceEnemy: "Glow Saint",
+    ability: "Project ghost-light from your chest cavity to reveal cloaked forms.",
+    statBoost: { CHA: 1, TEC: 1 },
+    mutationCost: 1,
+    humanityLoss: 1,
+  },
+  {
+    id: "scrap-mantis-blades",
+    name: "Scrap Mantis Blades",
+    sourceEnemy: "Mantis Collector",
+    ability: "Folded arm blades spring out for savage close-quarters bursts.",
+    statBoost: { ATT: 2 },
+    mutationCost: 2,
+    humanityLoss: 1,
+  },
+  {
+    id: "iron-lung-bellows",
+    name: "Iron Lung Bellows",
+    sourceEnemy: "Soot Diver",
+    ability: "Store air and expel it in a concussive blast or survive longer in gas.",
+    statBoost: { HEA: 1, DEF: 1 },
+    mutationCost: 2,
+    humanityLoss: 1,
+  },
+  {
+    id: "mag-claw-fingertips",
+    name: "Mag-Claw Fingertips",
+    sourceEnemy: "Wall Crawler",
+    ability: "Magnetic fingertips cling to rails, doors, and steel surfaces.",
+    statBoost: { TEC: 1, DEF: 1 },
+    mutationCost: 1,
+    humanityLoss: 1,
+  },
+  {
+    id: "copper-blood",
+    name: "Copper Blood",
+    sourceEnemy: "Volt Pilgrim",
+    ability: "Trace weak currents through walls and survive minor electrical arcs.",
+    statBoost: { HEA: 1, TEC: 1 },
+    mutationCost: 2,
+    humanityLoss: 1,
+  },
+  {
+    id: "predator-pupil-array",
+    name: "Predator Pupil Array",
+    sourceEnemy: "Night Stalker",
+    ability: "Multiple aperture shifts improve target tracking in chaos.",
+    statBoost: { ATT: 1, TEC: 1 },
+    mutationCost: 2,
+    humanityLoss: 1,
+  },
+  {
+    id: "crow-antennae",
+    name: "Crow Antennae",
+    sourceEnemy: "Broadcast Crow",
+    ability: "Tune into weak radio chatter and ping encoded transmissions.",
+    statBoost: { TEC: 2, CHA: 1 },
+    mutationCost: 2,
+    humanityLoss: 1,
+  },
+  {
+    id: "slag-hooves",
+    name: "Slag Hooves",
+    sourceEnemy: "Foundry Goat",
+    ability: "Kick sparks from concrete and hold steady on rubble and metal scrap.",
+    statBoost: { DEF: 1, ATT: 1 },
+    mutationCost: 1,
+    humanityLoss: 1,
+  },
+  {
+    id: "sainted-voice-box",
+    name: "Sainted Voice Box",
+    sourceEnemy: "Choir Machine",
+    ability: "Layer your speech with harmonics that unsettle enemies or rally crews.",
+    statBoost: { CHA: 2 },
+    mutationCost: 2,
+    humanityLoss: 1,
+  },
+  {
+    id: "ashen-marrow",
+    name: "Ashen Marrow",
+    sourceEnemy: "Cremator Wretch",
+    ability: "Your bones retain heat, resisting cold and feeding explosive exertion.",
+    statBoost: { HEA: 1, ATT: 1 },
+    mutationCost: 2,
+    humanityLoss: 1,
+  },
+  {
+    id: "clockwork-liver",
+    name: "Clockwork Liver",
+    sourceEnemy: "Ticker Ghoul",
+    ability: "Cycle stimulants and chems with less immediate backlash.",
+    statBoost: { HEA: 2, CHA: -1 },
+    mutationCost: 2,
+    humanityLoss: 1,
+  },
+  {
+    id: "signal-leech-palms",
+    name: "Signal Leech Palms",
+    sourceEnemy: "Patch Thief",
+    ability: "Drain charge from terminals and dead devices through touch.",
+    statBoost: { TEC: 2 },
+    mutationCost: 2,
+    humanityLoss: 1,
+  },
+  {
+    id: "breaker-jaw",
+    name: "Breaker Jaw",
+    sourceEnemy: "Demolition Saint",
+    ability: "A reinforced bite can crush locks, bone, or cable restraints.",
+    statBoost: { ATT: 2, DEF: 1 },
+    mutationCost: 2,
+    humanityLoss: 1,
+  },
+  {
+    id: "shiver-sac",
+    name: "Shiver Sac",
+    sourceEnemy: "Cold Threader",
+    ability: "Release a chill mist that slows pursuit and fogs thermal optics.",
+    statBoost: { TEC: 1, CHA: 1 },
+    mutationCost: 2,
+    humanityLoss: 1,
+  },
+  {
+    id: "vault-muscle-knots",
+    name: "Vault Muscle Knots",
+    sourceEnemy: "Safebreaker Titan",
+    ability: "Dense muscle clusters let you force doors and carry absurd weight.",
+    statBoost: { ATT: 2, HEA: 1 },
+    mutationCost: 2,
+    humanityLoss: 1,
+  },
+  {
+    id: "whisper-mesh-ear",
+    name: "Whisper Mesh Ear",
+    sourceEnemy: "Vent Listener",
+    ability: "Catch speech through walls, vents, and distant catwalks.",
+    statBoost: { TEC: 1, CHA: 1 },
+    mutationCost: 1,
+    humanityLoss: 1,
+  },
+  {
+    id: "needle-tail",
+    name: "Needle Tail",
+    sourceEnemy: "Sewer Scorpion",
+    ability: "A hidden tail lashes out with venom or tracer compounds.",
+    statBoost: { ATT: 2 },
+    mutationCost: 2,
+    humanityLoss: 1,
+  },
+  {
+    id: "cathedral-cartilage",
+    name: "Cathedral Cartilage",
+    sourceEnemy: "Bell Tower Giant",
+    ability: "Elastic joint padding lets you survive drops and ugly impacts.",
+    statBoost: { DEF: 2, HEA: 1 },
+    mutationCost: 2,
+    humanityLoss: 1,
+  },
+  {
+    id: "riot-siren-throat",
+    name: "Riot Siren Throat",
+    sourceEnemy: "Crowd Reaper",
+    ability: "Unleash a shriek that disorients mobs and rattles augmented senses.",
+    statBoost: { CHA: 2, TEC: 1 },
+    mutationCost: 3,
+    humanityLoss: 2,
+  },
+  {
+    id: "wiretap-tongue",
+    name: "Wiretap Tongue",
+    sourceEnemy: "Cable Rat",
+    ability: "Interface with exposed ports and jury-rig primitive data reads.",
+    statBoost: { TEC: 2 },
+    mutationCost: 2,
+    humanityLoss: 1,
+  },
+  {
+    id: "storm-capillaries",
+    name: "Storm Capillaries",
+    sourceEnemy: "Thunder Relic",
+    ability: "Tiny branching channels distribute surges without frying you outright.",
+    statBoost: { HEA: 1, TEC: 2 },
+    mutationCost: 2,
+    humanityLoss: 1,
+  },
+  {
+    id: "grinder-patella",
+    name: "Grinder Patella",
+    sourceEnemy: "Grinder Hound",
+    ability: "Reinforced knees turn leaps and slides into weapons.",
+    statBoost: { ATT: 1, DEF: 1 },
+    mutationCost: 1,
+    humanityLoss: 1,
+  },
+  {
+    id: "neon-bile-sac",
+    name: "Neon Bile Sac",
+    sourceEnemy: "Glow Maw",
+    ability: "Spit corrosive fluorescent sludge that burns gear and morale alike.",
+    statBoost: { ATT: 1, TEC: 1 },
+    mutationCost: 2,
+    humanityLoss: 1,
+  },
+  {
+    id: "prayer-engine-node",
+    name: "Prayer Engine Node",
+    sourceEnemy: "Machine Devotee",
+    ability: "A sacred logic kernel helps you stabilize under pressure and static.",
+    statBoost: { CHA: 1, TEC: 2 },
+    mutationCost: 2,
+    humanityLoss: 1,
+  },
+  {
+    id: "ferrofluid-spleen",
+    name: "Ferrofluid Spleen",
+    sourceEnemy: "Mercury Saint",
+    ability: "Your body redistributes impact through metallic suspension.",
+    statBoost: { DEF: 2, HEA: 1 },
+    mutationCost: 2,
+    humanityLoss: 1,
   },
 ];
 
-export function getGraftById(id: string) {
-  return GRAFT_CATALOG.find((g) => g.id === id) ?? null;
+export function getGraftTotals(grafts: CharacterGraft[] | undefined): Required<StatMods> {
+  const safe = Array.isArray(grafts) ? grafts : [];
+
+  return safe.reduce(
+    (acc, graft) => {
+      acc.ATT += graft.statBoost?.ATT ?? 0;
+      acc.TEC += graft.statBoost?.TEC ?? 0;
+      acc.CHA += graft.statBoost?.CHA ?? 0;
+      acc.DEF += graft.statBoost?.DEF ?? 0;
+      acc.HEA += graft.statBoost?.HEA ?? 0;
+      return acc;
+    },
+    { ATT: 0, TEC: 0, CHA: 0, DEF: 0, HEA: 0 }
+  );
 }
 
-export function getGraftTotals(grafts: CharacterGraft[] = []): Required<StatMods> {
-  const total: Required<StatMods> = {
-    ATT: 0,
-    TEC: 0,
-    CHA: 0,
-    DEF: 0,
-    HEA: 0,
-  };
-
-  for (const graft of grafts) {
-    const mods = graft.statBoost || {};
-    total.ATT += mods.ATT ?? 0;
-    total.TEC += mods.TEC ?? 0;
-    total.CHA += mods.CHA ?? 0;
-    total.DEF += mods.DEF ?? 0;
-    total.HEA += mods.HEA ?? 0;
-  }
-
-  return total;
+export function getTotalMutationFromGrafts(grafts: CharacterGraft[] | undefined): number {
+  const safe = Array.isArray(grafts) ? grafts : [];
+  return safe.reduce((sum, graft) => sum + (graft.mutationCost ?? 0), 0);
 }
 
-export function getTotalMutationFromGrafts(grafts: CharacterGraft[] = []) {
-  return grafts.reduce((sum, graft) => sum + (graft.mutationCost ?? 0), 0);
-}
-
-export function getTotalHumanityLossFromGrafts(grafts: CharacterGraft[] = []) {
-  return grafts.reduce((sum, graft) => sum + (graft.humanityLoss ?? 0), 0);
+export function getTotalHumanityLossFromGrafts(grafts: CharacterGraft[] | undefined): number {
+  const safe = Array.isArray(grafts) ? grafts : [];
+  return safe.reduce((sum, graft) => sum + (graft.humanityLoss ?? 0), 0);
 }
