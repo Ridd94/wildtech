@@ -53,6 +53,7 @@ type CharacterDoc = {
   mutationLevel?: number;
   humanity?: number;
   grafts?: CharacterGraft[];
+  availableGraftIds?: string[];
   currentHp?: number;
   maxHp?: number;
   createdAt?: any;
@@ -353,6 +354,7 @@ export default function CharacterSheetPage() {
               mutationLevel: typeof data.mutationLevel === "number" ? data.mutationLevel : 0,
               humanity: typeof data.humanity === "number" ? data.humanity : 10,
               grafts: Array.isArray(data.grafts) ? data.grafts : [],
+              availableGraftIds: Array.isArray(data.availableGraftIds) ? data.availableGraftIds : [],
               currentHp: typeof data.currentHp === "number" ? data.currentHp : 10,
               maxHp: typeof data.maxHp === "number" ? data.maxHp : 10,
             };
@@ -506,6 +508,7 @@ export default function CharacterSheetPage() {
   }, [itemsModule]);
 
   const grafts = character?.grafts ?? [];
+  const availableGraftIds = character?.availableGraftIds ?? [];
   const graftTotals = useMemo(() => getGraftTotals(grafts), [grafts]);
 
   const totals = useMemo(() => {
@@ -544,9 +547,13 @@ export default function CharacterSheetPage() {
   }, [character, equippedItems, graftTotals]);
 
   const availableGrafts = useMemo(() => {
+    if (!availableGraftIds.length) return [];
+
     const installed = new Set(grafts.map((g) => g.id));
-    return GRAFT_CATALOG.filter((g) => !installed.has(g.id));
-  }, [grafts]);
+    const unlocked = new Set(availableGraftIds);
+
+    return GRAFT_CATALOG.filter((g) => unlocked.has(g.id) && !installed.has(g.id));
+  }, [availableGraftIds, grafts]);
 
   const totalMutationFromGrafts = useMemo(() => getTotalMutationFromGrafts(grafts), [grafts]);
   const totalHumanityLossFromGrafts = useMemo(
@@ -600,6 +607,12 @@ export default function CharacterSheetPage() {
       return;
     }
 
+    const unlocked = new Set(character.availableGraftIds ?? []);
+    if (!unlocked.has(graft.id)) {
+      alert("That graft is not currently available to this character.");
+      return;
+    }
+
     const currentGrafts = Array.isArray(character.grafts) ? character.grafts : [];
     if (currentGrafts.some((g) => g.id === graft.id)) {
       alert("That graft is already installed.");
@@ -612,11 +625,15 @@ export default function CharacterSheetPage() {
       const nextGrafts = [...currentGrafts, graft];
       const nextMutation = (character.mutationLevel ?? 0) + graft.mutationCost;
       const nextHumanity = Math.max(0, (character.humanity ?? 10) - graft.humanityLoss);
+      const nextAvailableGraftIds = (character.availableGraftIds ?? []).filter(
+        (existingId) => existingId !== graft.id
+      );
 
       await persistCharacterPatch({
         grafts: nextGrafts,
         mutationLevel: nextMutation,
         humanity: nextHumanity,
+        availableGraftIds: nextAvailableGraftIds,
       });
     } catch (e: any) {
       alert(e?.message || "Failed to apply graft.");
@@ -1090,14 +1107,16 @@ export default function CharacterSheetPage() {
 
           <SectionCard
             title="Prototype Grafts"
-            sub="Experimental body modifications available for installation."
-            badge="Install"
+            sub="Experimental body modifications discovered during play and unlocked by the GM."
+            badge="Unlocked"
           >
             <div className="wt-scrollPanel" style={{ display: "grid", gap: 10, maxHeight: 560 }}>
               {availableGrafts.length === 0 ? (
                 <div className="wt-item">
-                  <div className="wt-muted" style={{ fontSize: 12 }}>
-                    All currently defined prototype grafts have been installed.
+                  <div className="wt-muted" style={{ fontSize: 12, lineHeight: 1.5 }}>
+                    No graft options are currently available.
+                    <br />
+                    Defeat mutated enemies and let the GM unlock recovered grafts for installation.
                   </div>
                 </div>
               ) : (
@@ -1284,6 +1303,7 @@ export default function CharacterSheetPage() {
                       mutationCost: g.mutationCost,
                       humanityLoss: g.humanityLoss,
                     })),
+                    availableGraftIds,
                     graftTotals,
                     mutationLevel,
                     humanity,
