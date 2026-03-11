@@ -17,7 +17,10 @@ import {
 import { db } from "@/lib/firebase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { generateGameCode } from "@/lib/wildtech/games";
-import { type CharacterGraft } from "@/lib/wildtech/grafts";
+import {
+  GRAFT_CATALOG,
+  type CharacterGraft,
+} from "@/lib/wildtech/grafts";
 
 type StatMods = {
   ATT?: number;
@@ -43,6 +46,7 @@ type SavedRosterCharacter = {
   grafts: CharacterGraft[];
   currentHp: number;
   maxHp: number;
+  availableGraftIds?: string[];
 };
 
 type GameDoc = {
@@ -69,6 +73,7 @@ type CharacterDoc = {
   mutationLevel?: number;
   humanity?: number;
   grafts?: CharacterGraft[];
+  availableGraftIds?: string[];
   activeGameId: string | null;
   currentHp?: number;
   maxHp?: number;
@@ -87,6 +92,8 @@ type ItemResolved = {
   tags?: string[];
   mods?: StatMods;
 };
+
+const GM_EMAIL = "luke@southwalescustomcomputers.com";
 
 const FALLBACK_ITEMS: ItemResolved[] = [
   {
@@ -206,8 +213,15 @@ export default function GmPage() {
   const [currentHpInputs, setCurrentHpInputs] = useState<Record<string, string>>({});
   const [maxHpInputs, setMaxHpInputs] = useState<Record<string, string>>({});
 
+  const [graftSearch, setGraftSearch] = useState("");
+  const [selectedCharacterIdForGrafts, setSelectedCharacterIdForGrafts] = useState<string>("");
+  const [assigningGraftKey, setAssigningGraftKey] = useState<string>("");
+
   const firebaseProjectId =
     process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || "missing-project-id";
+
+  const isAuthorizedGm =
+    !!user?.email && user.email.toLowerCase() === GM_EMAIL.toLowerCase();
 
   const fallbackMap = useMemo(() => {
     const map: Record<string, ItemResolved> = {};
@@ -239,6 +253,20 @@ export default function GmPage() {
       mounted = false;
     };
   }, []);
+
+  useEffect(() => {
+    if (!joinedCharacters.length) {
+      setSelectedCharacterIdForGrafts("");
+      return;
+    }
+
+    setSelectedCharacterIdForGrafts((current) => {
+      if (current && joinedCharacters.some((character) => character.id === current)) {
+        return current;
+      }
+      return joinedCharacters[0]?.id ?? "";
+    });
+  }, [joinedCharacters]);
 
   function resolveFromModule(itemId: string): ItemResolved | null {
     const mod = itemsModule;
@@ -351,6 +379,9 @@ export default function GmPage() {
       mutationLevel: typeof character.mutationLevel === "number" ? character.mutationLevel : 0,
       humanity: typeof character.humanity === "number" ? character.humanity : 10,
       grafts: Array.isArray(character.grafts) ? character.grafts : [],
+      availableGraftIds: Array.isArray(character.availableGraftIds)
+        ? character.availableGraftIds
+        : [],
       currentHp: typeof character.currentHp === "number" ? character.currentHp : 10,
       maxHp: typeof character.maxHp === "number" ? character.maxHp : 10,
     }));
@@ -358,7 +389,7 @@ export default function GmPage() {
 
   useEffect(() => {
     if (loading) return;
-    if (!user) {
+    if (!user || !isAuthorizedGm) {
       setGames([]);
       setSelectedGameId("");
       return;
@@ -407,11 +438,11 @@ export default function GmPage() {
     );
 
     return () => unsub();
-  }, [user, loading, firebaseProjectId]);
+  }, [user, loading, firebaseProjectId, isAuthorizedGm]);
 
   useEffect(() => {
     if (loading) return;
-    if (!user || !selectedGameId) {
+    if (!user || !selectedGameId || !isAuthorizedGm) {
       setJoinedCharacters([]);
       return;
     }
@@ -469,12 +500,47 @@ export default function GmPage() {
     );
 
     return () => unsub();
-  }, [user, loading, selectedGameId, firebaseProjectId]);
+  }, [user, loading, selectedGameId, firebaseProjectId, isAuthorizedGm]);
 
   const selectedGame = useMemo(
     () => games.find((game) => game.id === selectedGameId) ?? null,
     [games, selectedGameId]
   );
+
+  const selectedCharacterForGrafts = useMemo(
+    () =>
+      joinedCharacters.find((character) => character.id === selectedCharacterIdForGrafts) ?? null,
+    [joinedCharacters, selectedCharacterIdForGrafts]
+  );
+
+  const filteredGrafts = useMemo(() => {
+    const search = graftSearch.trim().toLowerCase();
+
+    const installed = new Set((selectedCharacterForGrafts?.grafts ?? []).map((g) => g.id));
+    const unlocked = new Set(selectedCharacterForGrafts?.availableGraftIds ?? []);
+
+    const baseList = GRAFT_CATALOG.map((graft) => ({
+      ...graft,
+      alreadyInstalled: installed.has(graft.id),
+      alreadyUnlocked: unlocked.has(graft.id),
+    }));
+
+    if (!search) return baseList;
+
+    return baseList.filter((graft) => {
+      const haystack = [
+        graft.name,
+        graft.id,
+        graft.sourceEnemy,
+        graft.ability,
+        ...(graft.tags ?? []),
+      ]
+        .join(" ")
+        .toLowerCase();
+
+      return haystack.includes(search);
+    });
+  }, [graftSearch, selectedCharacterForGrafts]);
 
   async function createNewGame() {
     if (!user) return;
@@ -520,6 +586,81 @@ export default function GmPage() {
       setError(err?.message || "Failed to create new game.");
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function assignGraftToCharacter(characterId: string, graft: CharacterGraft) {
+    const character = joinedCharacters.find((entry) => entry.id === characterId);
+    if (!character) return;
+
+    const installed = new Set((character.grafts ?? []).map((entry) => entry.id));
+    if (installed.has(graft.id)) {
+      setError(`${character.name} already has ${graft.name} installed.`);
+      return;
+    }
+
+    const currentAvailable = Array.isArray(character.availableGraftIds)
+      ? character.availableGraftIds
+      : [];
+
+    if (currentAvailable.includes(graft.id)) {
+      setError(`${graft.name} is already unlocked for ${character.name}.`);
+      return;
+    }
+
+    setAssigningGraftKey(`${characterId}:${graft.id}`);
+    setError("");
+
+    try {
+      await updateDoc(doc(db, "characters", characterId), {
+        availableGraftIds: [...currentAvailable, graft.id],
+        updatedAt: serverTimestamp(),
+      });
+    } catch (err: any) {
+      console.error("[GM Dashboard] assignGraftToCharacter failed", {
+        message: err?.message,
+        code: err?.code,
+        characterId,
+        graftId: graft.id,
+        uid: user?.uid,
+        projectId: firebaseProjectId,
+      });
+      setError(err?.message || "Failed to assign graft.");
+    } finally {
+      setAssigningGraftKey("");
+    }
+  }
+
+  async function removeUnlockedGraftFromCharacter(characterId: string, graftId: string) {
+    const character = joinedCharacters.find((entry) => entry.id === characterId);
+    if (!character) return;
+
+    const currentAvailable = Array.isArray(character.availableGraftIds)
+      ? character.availableGraftIds
+      : [];
+
+    if (!currentAvailable.includes(graftId)) return;
+
+    setAssigningGraftKey(`${characterId}:${graftId}:remove`);
+    setError("");
+
+    try {
+      await updateDoc(doc(db, "characters", characterId), {
+        availableGraftIds: currentAvailable.filter((id) => id !== graftId),
+        updatedAt: serverTimestamp(),
+      });
+    } catch (err: any) {
+      console.error("[GM Dashboard] removeUnlockedGraftFromCharacter failed", {
+        message: err?.message,
+        code: err?.code,
+        characterId,
+        graftId,
+        uid: user?.uid,
+        projectId: firebaseProjectId,
+      });
+      setError(err?.message || "Failed to remove unlocked graft.");
+    } finally {
+      setAssigningGraftKey("");
     }
   }
 
@@ -768,6 +909,30 @@ export default function GmPage() {
     );
   }
 
+  if (!isAuthorizedGm) {
+    return (
+      <div className="wt-page">
+        <div className="wt-card">
+          <div className="wt-cardHeader">
+            <div className="wt-cardTitle">GM Dashboard</div>
+            <div className="wt-cardSub">
+              This control panel is restricted to the WildTech game master account.
+            </div>
+          </div>
+          <div className="wt-cardBody" style={{ display: "grid", gap: 12 }}>
+            <div className="wt-item">
+              <div className="wt-kicker">Signed In As</div>
+              <div className="wt-itemName">{user.email || user.uid}</div>
+            </div>
+            <Link href="/dashboard" className="wt-btn wt-btnPrimary">
+              Back to Dashboard
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="wt-page">
       <section
@@ -808,13 +973,15 @@ export default function GmPage() {
               GM Dashboard
             </div>
             <div className="wt-muted" style={{ maxWidth: 920, fontSize: 14, lineHeight: 1.6 }}>
-              Run active sessions, close joining when needed, end games cleanly, or archive them into Game History with saved player state.
+              Run active sessions, control player health, assign unlocked grafts, close joining when
+              needed, end games cleanly, or archive them into Game History with saved player state.
             </div>
           </div>
 
           <div className="wt-chipRow">
             <span className="wt-chip">Project: {firebaseProjectId}</span>
             <span className="wt-chip">GM UID: {user.uid}</span>
+            <span className="wt-chip">GM Email: {user.email || "Unknown"}</span>
           </div>
 
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
@@ -1055,6 +1222,197 @@ export default function GmPage() {
               )}
             </div>
           </section>
+
+          <section className="wt-card">
+            <div className="wt-cardHeader">
+              <div className="wt-cardTitle">Graft Assignment Console</div>
+              <div className="wt-cardSub">
+                Unlock one of 50 grafts for a player in the current live session.
+              </div>
+            </div>
+
+            <div className="wt-cardBody" style={{ display: "grid", gap: 12 }}>
+              {!selectedGame ? (
+                <div className="wt-item">
+                  <div className="wt-muted" style={{ fontSize: 12 }}>
+                    Select a game first to unlock grafts for players.
+                  </div>
+                </div>
+              ) : joinedCharacters.length === 0 ? (
+                <div className="wt-item">
+                  <div className="wt-muted" style={{ fontSize: 12 }}>
+                    No players are currently in this session.
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <div className="wt-item">
+                    <div className="wt-kicker">Target Player</div>
+                    <select
+                      className="wt-input"
+                      value={selectedCharacterIdForGrafts}
+                      onChange={(e) => setSelectedCharacterIdForGrafts(e.target.value)}
+                    >
+                      {joinedCharacters.map((character) => (
+                        <option key={character.id} value={character.id}>
+                          {character.name} — {character.className}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="wt-item">
+                    <div className="wt-kicker">Search Grafts</div>
+                    <input
+                      className="wt-input"
+                      type="text"
+                      placeholder="Search by name, enemy, tag, or ability"
+                      value={graftSearch}
+                      onChange={(e) => setGraftSearch(e.target.value)}
+                    />
+                  </div>
+
+                  {selectedCharacterForGrafts ? (
+                    <div className="wt-item">
+                      <div className="wt-itemTop">
+                        <div>
+                          <div className="wt-itemName">{selectedCharacterForGrafts.name}</div>
+                          <div className="wt-muted" style={{ fontSize: 12 }}>
+                            Unlocked: {(selectedCharacterForGrafts.availableGraftIds ?? []).length} ·
+                            Installed: {(selectedCharacterForGrafts.grafts ?? []).length}
+                          </div>
+                        </div>
+                        <span className="wt-tag">Target</span>
+                      </div>
+
+                      <div className="wt-chipRow" style={{ marginTop: 10 }}>
+                        {(selectedCharacterForGrafts.availableGraftIds ?? []).length === 0 ? (
+                          <span className="wt-chip">No unlocked grafts</span>
+                        ) : (
+                          (selectedCharacterForGrafts.availableGraftIds ?? []).map((graftId) => {
+                            const graft = GRAFT_CATALOG.find((entry) => entry.id === graftId);
+                            return (
+                              <span
+                                key={graftId}
+                                className="wt-chip"
+                                style={{ display: "inline-flex", gap: 8, alignItems: "center" }}
+                              >
+                                <span>{graft?.name || graftId}</span>
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    removeUnlockedGraftFromCharacter(
+                                      selectedCharacterForGrafts.id,
+                                      graftId
+                                    )
+                                  }
+                                  disabled={
+                                    assigningGraftKey ===
+                                    `${selectedCharacterForGrafts.id}:${graftId}:remove`
+                                  }
+                                  style={{
+                                    border: "none",
+                                    background: "transparent",
+                                    color: "inherit",
+                                    cursor: "pointer",
+                                    fontWeight: 900,
+                                    padding: 0,
+                                  }}
+                                  aria-label={`Remove ${graft?.name || graftId}`}
+                                >
+                                  ×
+                                </button>
+                              </span>
+                            );
+                          })
+                        )}
+                      </div>
+                    </div>
+                  ) : null}
+
+                  <div
+                    className="wt-scrollPanel"
+                    style={{
+                      display: "grid",
+                      gap: 10,
+                      maxHeight: 640,
+                    }}
+                  >
+                    {filteredGrafts.map((graft) => {
+                      const isAssigning =
+                        assigningGraftKey === `${selectedCharacterIdForGrafts}:${graft.id}`;
+
+                      return (
+                        <div key={graft.id} className="wt-item">
+                          <div className="wt-itemTop" style={{ alignItems: "flex-start", gap: 12 }}>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div className="wt-itemName">{graft.name}</div>
+                              <div className="wt-muted" style={{ fontSize: 12, marginTop: 4 }}>
+                                {graft.sourceEnemy}
+                              </div>
+                              <div
+                                className="wt-muted"
+                                style={{ fontSize: 12, lineHeight: 1.55, marginTop: 8 }}
+                              >
+                                {graft.ability}
+                              </div>
+
+                              <div className="wt-chipRow">
+                                {(graft.tags ?? []).map((tag) => (
+                                  <span key={tag} className="wt-chip">
+                                    {tag}
+                                  </span>
+                                ))}
+                                {formatModChips(graft.statBoost).map((chip) => (
+                                  <span key={chip} className="wt-chip">
+                                    {chip}
+                                  </span>
+                                ))}
+                                <span className="wt-chip">+{graft.mutationCost} Mutation</span>
+                                <span className="wt-chip">-{graft.humanityLoss} Humanity</span>
+                              </div>
+
+                              <div className="wt-chipRow" style={{ marginTop: 8 }}>
+                                {graft.alreadyInstalled ? (
+                                  <span className="wt-tag">Installed</span>
+                                ) : null}
+                                {graft.alreadyUnlocked ? (
+                                  <span className="wt-tag wt-tagEquipped">Unlocked</span>
+                                ) : null}
+                              </div>
+                            </div>
+
+                            <button
+                              type="button"
+                              className="wt-btn wt-btnPrimary wt-btnSmall"
+                              disabled={
+                                !selectedCharacterForGrafts ||
+                                graft.alreadyInstalled ||
+                                graft.alreadyUnlocked ||
+                                !!assigningGraftKey
+                              }
+                              onClick={() =>
+                                selectedCharacterForGrafts &&
+                                assignGraftToCharacter(selectedCharacterForGrafts.id, graft)
+                              }
+                            >
+                              {isAssigning
+                                ? "Assigning..."
+                                : graft.alreadyInstalled
+                                ? "Installed"
+                                : graft.alreadyUnlocked
+                                ? "Unlocked"
+                                : "Assign"}
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </>
+              )}
+            </div>
+          </section>
         </div>
 
         <section className="wt-card">
@@ -1086,6 +1444,10 @@ export default function GmPage() {
                 const maxHp =
                   typeof character.maxHp === "number" ? character.maxHp : 10;
                 const grafts = character.grafts ?? [];
+                const unlockedGraftIds = character.availableGraftIds ?? [];
+                const unlockedGrafts = unlockedGraftIds
+                  .map((graftId) => GRAFT_CATALOG.find((entry) => entry.id === graftId))
+                  .filter(Boolean) as CharacterGraft[];
                 const resolvedEquipment = getResolvedEquipment(character);
                 const expanded = isExpanded(character.id);
 
@@ -1346,7 +1708,7 @@ export default function GmPage() {
                           </div>
 
                           <div>
-                            <div className="wt-kicker">Grafts</div>
+                            <div className="wt-kicker">Installed Grafts</div>
                             <div style={{ display: "grid", gap: 8, marginTop: 8 }}>
                               {grafts.length === 0 ? (
                                 <div className="wt-chipRow">
@@ -1362,7 +1724,7 @@ export default function GmPage() {
                                           {graft.sourceEnemy}
                                         </div>
                                       </div>
-                                      <span className="wt-tag">Graft</span>
+                                      <span className="wt-tag">Installed</span>
                                     </div>
 
                                     <div
@@ -1382,6 +1744,48 @@ export default function GmPage() {
                                       ) : (
                                         <span className="wt-chip">No stat change</span>
                                       )}
+                                      <span className="wt-chip">+{graft.mutationCost} Mutation</span>
+                                      <span className="wt-chip">-{graft.humanityLoss} Humanity</span>
+                                    </div>
+                                  </div>
+                                ))
+                              )}
+                            </div>
+                          </div>
+
+                          <div>
+                            <div className="wt-kicker">Unlocked Prototype Grafts</div>
+                            <div style={{ display: "grid", gap: 8, marginTop: 8 }}>
+                              {unlockedGrafts.length === 0 ? (
+                                <div className="wt-chipRow">
+                                  <span className="wt-chip">No unlocked grafts</span>
+                                </div>
+                              ) : (
+                                unlockedGrafts.map((graft) => (
+                                  <div key={graft.id} className="wt-item">
+                                    <div className="wt-itemTop">
+                                      <div>
+                                        <div className="wt-itemName">{graft.name}</div>
+                                        <div className="wt-muted" style={{ fontSize: 12 }}>
+                                          {graft.sourceEnemy}
+                                        </div>
+                                      </div>
+                                      <span className="wt-tag wt-tagEquipped">Unlocked</span>
+                                    </div>
+
+                                    <div
+                                      className="wt-muted"
+                                      style={{ fontSize: 12, lineHeight: 1.55, marginTop: 8 }}
+                                    >
+                                      {graft.ability}
+                                    </div>
+
+                                    <div className="wt-chipRow">
+                                      {formatModChips(graft.statBoost).map((chip) => (
+                                        <span key={chip} className="wt-chip">
+                                          {chip}
+                                        </span>
+                                      ))}
                                       <span className="wt-chip">+{graft.mutationCost} Mutation</span>
                                       <span className="wt-chip">-{graft.humanityLoss} Humanity</span>
                                     </div>
