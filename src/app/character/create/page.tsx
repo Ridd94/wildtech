@@ -1405,9 +1405,10 @@ export default function CreateCharacterPage() {
         equipment: selectedEquipment,
         activeGameId: null,
 
-        grafts: [],
         mutationLevel: 0,
-        humanity: 10,
+        humanity: 100,
+        grafts: [],
+        availableGraftIds: [],
 
         currentHp: 20,
         maxHp: 20,
@@ -1811,13 +1812,13 @@ export default function CreateCharacterPage() {
                     <div>
                       <div className="wt-kicker">Identity Baseline</div>
                       <div className="wt-itemName" style={{ fontSize: 18 }}>
-                        Mutation 0 • Humanity 10 • HP 20/20
+                        Mutation 0 • Humanity 100 • HP 20/20
                       </div>
                       <div
                         className="wt-muted"
                         style={{ fontSize: 14, marginTop: 6, lineHeight: 1.5 }}
                       >
-                        New contractors begin unmodified. Future grafts will raise Mutation and reduce Humanity.
+                        New contractors begin unmodified. Grafts must be GM-unlocked first, then installed from the character sheet.
                       </div>
                     </div>
                     <span className="wt-tag">Grafting</span>
@@ -1887,22 +1888,10 @@ export default function CreateCharacterPage() {
               label="Class"
               value={selectedClass ? `${selectedClass.short || ""} ${selectedClass.name}`.trim() : "Not selected"}
             />
-            <PreviewRow
-              label="Weapon"
-              value={selectedWeapon?.name || "Not selected"}
-            />
-            <PreviewRow
-              label="Vitals"
-              value={selectedVitality?.name || "Not selected"}
-            />
-            <PreviewRow
-              label="Utility"
-              value={selectedUtility?.name || "Not selected"}
-            />
-            <PreviewRow
-              label="Armour"
-              value={selectedArmour?.name || "Not selected"}
-            />
+            <PreviewRow label="Weapon" value={selectedWeapon?.name || "Not selected"} />
+            <PreviewRow label="Vitals" value={selectedVitality?.name || "Not selected"} />
+            <PreviewRow label="Utility" value={selectedUtility?.name || "Not selected"} />
+            <PreviewRow label="Armour" value={selectedArmour?.name || "Not selected"} />
 
             <div
               style={{
@@ -1965,7 +1954,9 @@ export default function CreateCharacterPage() {
               >
                 <div>HP: 20 / 20</div>
                 <div>Mutation: 0</div>
-                <div>Humanity: 10</div>
+                <div>Humanity: 100</div>
+                <div>Unlocked Grafts: 0</div>
+                <div>Installed Grafts: 0</div>
                 <div>Equipment Slots Filled: {selectedEquipment.length} / 4</div>
               </div>
             </div>
@@ -1990,11 +1981,7 @@ export default function CreateCharacterPage() {
           zIndex: 30,
         }}
       >
-        <button
-          className="wt-btn"
-          onClick={back}
-          disabled={step === 1 || saving}
-        >
+        <button className="wt-btn" onClick={back} disabled={step === 1 || saving}>
           Back
         </button>
 
@@ -2019,11 +2006,7 @@ export default function CreateCharacterPage() {
             Next
           </button>
         ) : (
-          <button
-            className="wt-btn wt-btnJoin"
-            onClick={save}
-            disabled={saving}
-          >
+          <button className="wt-btn wt-btnJoin" onClick={save} disabled={saving}>
             {saving ? "Saving…" : "Create Character"}
           </button>
         )}
