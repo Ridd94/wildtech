@@ -673,6 +673,18 @@ function addMods(...allMods: Array<StatMods | undefined | null>): StatMods {
   return result;
 }
 
+const LOOT_CATEGORY_TO_SLOT: Record<string, ItemCategory> = {
+  "melee weapons": "weapon",
+  pistols: "weapon",
+  smgs: "weapon",
+  rifles: "weapon",
+  shotguns: "weapon",
+  "heavy weapons": "weapon",
+  armour: "armour",
+  medical: "vitality",
+  utilities: "utility",
+};
+
 function inferCategory(raw: any): ItemCategory | null {
   const direct =
     raw?.category ||
@@ -691,6 +703,10 @@ function inferCategory(raw: any): ItemCategory | null {
     normalizedDirect === "armour"
   ) {
     return normalizedDirect as ItemCategory;
+  }
+
+  if (LOOT_CATEGORY_TO_SLOT[normalizedDirect]) {
+    return LOOT_CATEGORY_TO_SLOT[normalizedDirect];
   }
 
   if (normalizedDirect === "armor") return "armour";
@@ -1247,11 +1263,17 @@ export default function CreateCharacterPage() {
       mod?.default?.items ||
       null;
 
-    if (!Array.isArray(list)) {
+    const rawItems: any[] = Array.isArray(list)
+      ? list
+      : list && typeof list === "object"
+      ? Object.values(list)
+      : [];
+
+    if (rawItems.length === 0) {
       return FALLBACK_ITEMS;
     }
 
-    const normalized = list
+    const normalized = rawItems
       .map((x: any) => {
         const category = inferCategory(x);
         if (!category) return null;

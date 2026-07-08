@@ -22,6 +22,7 @@ import {
   getTotalHumanityLossFromGrafts,
   getTotalMutationFromGrafts,
 } from "@/lib/wildtech/grafts";
+import { getBlueprint } from "@/lib/wildtech/blueprints";
 
 type StatMods = {
   ATT?: number;
@@ -55,6 +56,7 @@ type CharacterDoc = {
   humanity?: number;
   grafts?: CharacterGraft[];
   availableGraftIds?: string[];
+  knownBlueprintIds?: string[];
   currentHp?: number;
   maxHp?: number;
   createdAt?: any;
@@ -356,6 +358,7 @@ export default function CharacterSheetPage() {
               humanity: typeof data.humanity === "number" ? data.humanity : 10,
               grafts: Array.isArray(data.grafts) ? data.grafts : [],
               availableGraftIds: Array.isArray(data.availableGraftIds) ? data.availableGraftIds : [],
+              knownBlueprintIds: Array.isArray(data.knownBlueprintIds) ? data.knownBlueprintIds : [],
               currentHp: typeof data.currentHp === "number" ? data.currentHp : 10,
               maxHp: typeof data.maxHp === "number" ? data.maxHp : 10,
             };
@@ -430,6 +433,8 @@ export default function CharacterSheetPage() {
       mod.ITEM_BY_ID ||
       mod.byId ||
       mod.default?.itemsById ||
+      (mod.ITEMS && !Array.isArray(mod.ITEMS) ? mod.ITEMS : null) ||
+      (mod.items && !Array.isArray(mod.items) ? mod.items : null) ||
       null;
 
     if (byId && typeof byId === "object" && byId[itemId]) {
@@ -495,16 +500,20 @@ export default function CharacterSheetPage() {
       mod?.default?.items ||
       null;
 
+    const normalize = (x: any): ItemResolved => ({
+      id: String(x?.id ?? ""),
+      name: x?.name || x?.title || String(x?.id ?? "Unknown"),
+      description: x?.description || x?.desc || "",
+      tags: x?.tags || [],
+      mods: x?.statMods || x?.mods || x?.bonus || {},
+    });
+
     if (Array.isArray(list)) {
-      return list
-        .map((x: any) => ({
-          id: String(x?.id ?? ""),
-          name: x?.name || x?.title || String(x?.id ?? "Unknown"),
-          description: x?.description || x?.desc || "",
-          tags: x?.tags || [],
-          mods: x?.statMods || x?.mods || x?.bonus || {},
-        }))
-        .filter((x: ItemResolved) => x.id);
+      return list.map(normalize).filter((x: ItemResolved) => x.id);
+    }
+
+    if (list && typeof list === "object") {
+      return Object.values(list).map(normalize).filter((x: ItemResolved) => x.id);
     }
 
     return FALLBACK_ITEMS.filter((x) => !["knife", "pistol"].includes(x.id));
@@ -1159,6 +1168,61 @@ export default function CharacterSheetPage() {
                     </div>
                   </div>
                 ))
+              )}
+            </div>
+          </SectionCard>
+
+          <SectionCard
+            title="Known Blueprints"
+            sub="Schematics the party has recovered and learned during play."
+            badge={`Known ${(character.knownBlueprintIds ?? []).length}`}
+          >
+            <div className="wt-scrollPanel" style={{ display: "grid", gap: 10, maxHeight: 560 }}>
+              {(character.knownBlueprintIds ?? []).length === 0 ? (
+                <div className="wt-item">
+                  <div className="wt-muted" style={{ fontSize: 12, lineHeight: 1.5 }}>
+                    No blueprints known yet.
+                    <br />
+                    Recover and study schematics in the field, then let the GM reveal them to the party.
+                  </div>
+                </div>
+              ) : (
+                (character.knownBlueprintIds ?? []).map((blueprintId) => {
+                  const blueprint = getBlueprint(blueprintId);
+                  if (!blueprint) return null;
+
+                  return (
+                    <div key={blueprintId} className="wt-item">
+                      <div className="wt-itemTop">
+                        <div>
+                          <div className="wt-itemName">{blueprint.name}</div>
+                          <div className="wt-muted" style={{ fontSize: 12 }}>
+                            {blueprint.category}
+                          </div>
+                        </div>
+                        <span className="wt-tag">Known</span>
+                      </div>
+
+                      <div className="wt-muted" style={{ fontSize: 12, lineHeight: 1.55, marginTop: 8 }}>
+                        {blueprint.description}
+                      </div>
+
+                      <div className="wt-chipRow">
+                        {formatModChips(blueprint.statMods).map((chip) => (
+                          <span key={chip} className="wt-chip">
+                            {chip}
+                          </span>
+                        ))}
+                        {typeof blueprint.mutationCost === "number" ? (
+                          <span className="wt-chip">+{blueprint.mutationCost} Mutation</span>
+                        ) : null}
+                        {typeof blueprint.humanityLoss === "number" ? (
+                          <span className="wt-chip">-{blueprint.humanityLoss} Humanity</span>
+                        ) : null}
+                      </div>
+                    </div>
+                  );
+                })
               )}
             </div>
           </SectionCard>

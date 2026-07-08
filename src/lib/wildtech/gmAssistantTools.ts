@@ -1,6 +1,7 @@
 import { FieldValue, type Firestore } from "firebase-admin/firestore";
 import { GRAFT_CATALOG, type CharacterGraft } from "@/lib/wildtech/grafts";
 import { ITEMS } from "@/lib/game/items";
+import { getBlueprint } from "@/lib/wildtech/blueprints";
 
 type StatMods = {
   ATT?: number;
@@ -25,6 +26,7 @@ export type JoinedCharacter = {
   customItems?: ItemResolved[];
   grafts?: CharacterGraft[];
   availableGraftIds?: string[];
+  knownBlueprintIds?: string[];
   currentHp?: number;
   maxHp?: number;
   mutationLevel?: number;
@@ -143,6 +145,18 @@ export const GM_ASSISTANT_TOOLS = [
       required: ["characterId", "graftId"],
     },
   },
+  {
+    name: "reveal_blueprint_to_party",
+    description:
+      "Reveal a blueprint to the entire party — every joined character in this session learns it and it appears on their character sheets under Known Blueprints. Blueprint IDs are the graft or item catalog ID prefixed with \"graft-\" or \"item-\" (e.g. \"graft-cybernetic-laser-eye\", \"item-gauss_rifle\").",
+    input_schema: {
+      type: "object",
+      properties: {
+        blueprintId: { type: "string" },
+      },
+      required: ["blueprintId"],
+    },
+  },
 ] as const;
 
 type ToolExecutionResult = { summary: string } | { error: string };
@@ -153,6 +167,29 @@ export async function executeGmAssistantTool(
   toolName: string,
   input: any
 ): Promise<ToolExecutionResult> {
+  if (toolName === "reveal_blueprint_to_party") {
+    const blueprint = getBlueprint(String(input?.blueprintId));
+    if (!blueprint) return { error: "Unknown blueprint ID." };
+    if (roster.length === 0) return { error: "No players are currently in this session." };
+
+    const missing = roster.filter((c) => !(c.knownBlueprintIds ?? []).includes(blueprint.id));
+    if (missing.length === 0) {
+      return { error: `The whole party already knows ${blueprint.name}.` };
+    }
+
+    const batch = db.batch();
+    for (const character of missing) {
+      batch.update(db.collection("characters").doc(character.id), {
+        knownBlueprintIds: FieldValue.arrayUnion(blueprint.id),
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+      character.knownBlueprintIds = [...(character.knownBlueprintIds ?? []), blueprint.id];
+    }
+    await batch.commit();
+
+    return { summary: `Revealed the "${blueprint.name}" blueprint to the party.` };
+  }
+
   const target = roster.find((c) => c.id === input?.characterId);
   if (!target) {
     return { error: "No character with that ID is currently in this game." };

@@ -74,9 +74,10 @@ export async function POST(req: Request) {
       const equipment = (c.equipment ?? []).join(", ") || "none";
       const grafts = (c.grafts ?? []).map((g) => g.name).join(", ") || "none";
       const unlocked = (c.availableGraftIds ?? []).join(", ") || "none";
+      const knownBlueprints = (c.knownBlueprintIds ?? []).join(", ") || "none";
       return `- id: ${c.id} | name: ${c.name} | class: ${c.className ?? "unknown"} | HP: ${c.currentHp ?? 10}/${
         c.maxHp ?? 10
-      } | mutation: ${c.mutationLevel ?? 0} | humanity: ${c.humanity ?? 10} | equipment: ${equipment} | installed grafts: ${grafts} | unlocked graft ids: ${unlocked}`;
+      } | mutation: ${c.mutationLevel ?? 0} | humanity: ${c.humanity ?? 10} | equipment: ${equipment} | installed grafts: ${grafts} | unlocked graft ids: ${unlocked} | known blueprint ids: ${knownBlueprints}`;
     })
     .join("\n");
 
@@ -85,7 +86,7 @@ export async function POST(req: Request) {
 
   const system = `You are the GM's assistant for a live WildTech tabletop session. Game code: ${game.code ?? "unknown"}.
 
-Current players in this session:
+Current players in this session (including what blueprints each already knows):
 ${rosterLines}
 
 Preset item catalog (id: name):
@@ -94,7 +95,9 @@ ${itemCatalogLines}
 Graft catalog (id: name):
 ${graftCatalogLines}
 
-Use the provided tools to carry out requests to change a player's health, items, or grafts, or to remove a player from the session. Always resolve player names to the exact character "id" shown above before calling a tool — never invent an id. If a name is ambiguous (matches multiple players) or you can't find a match, ask a clarifying question instead of guessing. If a request is out of scope for your tools (e.g. ending or saving the game session), say so plainly rather than attempting it. Keep replies short and conversational.`;
+Use the provided tools to carry out requests to change a player's health, items, or grafts, or to remove a player from the session. Always resolve player names to the exact character "id" shown above before calling a tool — never invent an id. If a name is ambiguous (matches multiple players) or you can't find a match, ask a clarifying question instead of guessing. If a request is out of scope for your tools (e.g. ending or saving the game session), say so plainly rather than attempting it. Keep replies short and conversational.
+
+Blueprints represent schematics the party has found. To reveal one, use "reveal_blueprint_to_party" with a blueprintId built from the graft or item catalogs above: "graft-<graftId>" for a graft blueprint (e.g. "graft-cybernetic-laser-eye") or "item-<itemId>" for an item blueprint (e.g. "item-gauss_rifle"). This always applies to every joined player at once, not a single character.`;
 
   const messages: Anthropic.MessageParam[] = [
     ...history.map((turn) => ({ role: turn.role, content: turn.content })),

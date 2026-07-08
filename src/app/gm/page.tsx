@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   addDoc,
+  arrayUnion,
   collection,
   doc,
   getDocs,
@@ -18,6 +19,7 @@ import { db } from "@/lib/firebase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { generateGameCode } from "@/lib/wildtech/games";
 import { GRAFT_CATALOG, type CharacterGraft } from "@/lib/wildtech/grafts";
+import { BLUEPRINT_CATALOG } from "@/lib/wildtech/blueprints";
 
 type StatMods = {
   ATT?: number;
@@ -42,6 +44,7 @@ type SavedRosterCharacter = {
   mutationLevel: number;
   humanity: number;
   grafts: CharacterGraft[];
+  knownBlueprintIds: string[];
   currentHp: number;
   maxHp: number;
 };
@@ -72,6 +75,7 @@ type CharacterDoc = {
   humanity?: number;
   grafts?: CharacterGraft[];
   availableGraftIds?: string[];
+  knownBlueprintIds?: string[];
   activeGameId: string | null;
   currentHp?: number;
   maxHp?: number;
@@ -212,6 +216,8 @@ export default function GmPage() {
   const [maxHpInputs, setMaxHpInputs] = useState<Record<string, string>>({});
   const [selectedCharacterId, setSelectedCharacterId] = useState<string>("");
   const [graftSearch, setGraftSearch] = useState("");
+  const [blueprintSearch, setBlueprintSearch] = useState("");
+  const [revealingBlueprintId, setRevealingBlueprintId] = useState("");
   const [assigningGraftId, setAssigningGraftId] = useState<string>("");
   const [assignmentMessage, setAssignmentMessage] = useState("");
   const [itemBusyId, setItemBusyId] = useState<string>("");
@@ -328,6 +334,8 @@ export default function GmPage() {
       mod.ITEM_BY_ID ||
       mod.byId ||
       mod.default?.itemsById ||
+      (mod.ITEMS && !Array.isArray(mod.ITEMS) ? mod.ITEMS : null) ||
+      (mod.items && !Array.isArray(mod.items) ? mod.items : null) ||
       null;
 
     if (byId && typeof byId === "object" && byId[itemId]) {
@@ -432,6 +440,7 @@ export default function GmPage() {
       mutationLevel: typeof character.mutationLevel === "number" ? character.mutationLevel : 0,
       humanity: typeof character.humanity === "number" ? character.humanity : 10,
       grafts: Array.isArray(character.grafts) ? character.grafts : [],
+      knownBlueprintIds: Array.isArray(character.knownBlueprintIds) ? character.knownBlueprintIds : [],
       currentHp: typeof character.currentHp === "number" ? character.currentHp : 10,
       maxHp: typeof character.maxHp === "number" ? character.maxHp : 10,
     }));
@@ -596,6 +605,34 @@ export default function GmPage() {
       return haystack.includes(term);
     });
   }, [graftSearch]);
+
+  const filteredBlueprints = useMemo(() => {
+    const term = blueprintSearch.trim().toLowerCase();
+
+    if (!term) return BLUEPRINT_CATALOG;
+
+    return BLUEPRINT_CATALOG.filter((blueprint) => {
+      const haystack = [blueprint.name, blueprint.category, blueprint.description, ...formatModChips(blueprint.statMods)]
+        .join(" ")
+        .toLowerCase();
+
+      return haystack.includes(term);
+    });
+  }, [blueprintSearch]);
+
+  const partyKnownBlueprintIds = useMemo(() => {
+    if (joinedCharacters.length === 0) return new Set<string>();
+
+    return joinedCharacters.reduce((known, character) => {
+      for (const id of character.knownBlueprintIds ?? []) known.add(id);
+      return known;
+    }, new Set<string>());
+  }, [joinedCharacters]);
+
+  function isBlueprintKnownByWholeParty(blueprintId: string) {
+    if (joinedCharacters.length === 0) return false;
+    return joinedCharacters.every((character) => (character.knownBlueprintIds ?? []).includes(blueprintId));
+  }
 
   async function createNewGame() {
     if (!user) return;
@@ -903,6 +940,48 @@ export default function GmPage() {
       setError(err?.message || "Failed to assign graft.");
     } finally {
       setAssigningGraftId("");
+    }
+  }
+
+  async function revealBlueprintToParty(blueprintId: string) {
+    const blueprint = BLUEPRINT_CATALOG.find((entry) => entry.id === blueprintId);
+    if (!blueprint || joinedCharacters.length === 0) return;
+
+    setRevealingBlueprintId(blueprintId);
+    setError("");
+    setAssignmentMessage("");
+
+    try {
+      const batch = writeBatch(db);
+      let anyMissing = false;
+
+      for (const character of joinedCharacters) {
+        if ((character.knownBlueprintIds ?? []).includes(blueprintId)) continue;
+        anyMissing = true;
+        batch.update(doc(db, "characters", character.id), {
+          knownBlueprintIds: arrayUnion(blueprintId),
+          updatedAt: serverTimestamp(),
+        });
+      }
+
+      if (!anyMissing) {
+        setAssignmentMessage(`The whole party already knows ${blueprint.name}.`);
+        return;
+      }
+
+      await batch.commit();
+      setAssignmentMessage(`Revealed the "${blueprint.name}" blueprint to the party.`);
+    } catch (err: any) {
+      console.error("[GM Dashboard] revealBlueprintToParty failed", {
+        message: err?.message,
+        code: err?.code,
+        uid: user?.uid,
+        blueprintId,
+        projectId: firebaseProjectId,
+      });
+      setError(err?.message || "Failed to reveal blueprint.");
+    } finally {
+      setRevealingBlueprintId("");
     }
   }
 
@@ -1731,6 +1810,114 @@ export default function GmPage() {
               )}
             </div>
           </section>
+
+          <section className="wt-card">
+            <div className="wt-cardHeader">
+              <div className="wt-cardTitle">Blueprint Discovery Console</div>
+              <div className="wt-cardSub">
+                Reveal a blueprint to the whole party. Everyone currently joined learns it at once, and it
+                appears on each of their character sheets under Known Blueprints.
+              </div>
+            </div>
+
+            <div className="wt-cardBody" style={{ display: "grid", gap: 12 }}>
+              {!selectedGame ? (
+                <div className="wt-item">
+                  <div className="wt-muted" style={{ fontSize: 12 }}>
+                    Select a game first.
+                  </div>
+                </div>
+              ) : joinedCharacters.length === 0 ? (
+                <div className="wt-item">
+                  <div className="wt-muted" style={{ fontSize: 12 }}>
+                    No players are currently in this session.
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <div className="wt-item">
+                    <div className="wt-kicker">Search Blueprints</div>
+                    <input
+                      className="wt-input"
+                      type="text"
+                      placeholder="Search by name, category, or stat..."
+                      value={blueprintSearch}
+                      onChange={(e) => setBlueprintSearch(e.target.value)}
+                    />
+                  </div>
+
+                  <div className="wt-item">
+                    <div className="wt-muted" style={{ fontSize: 12 }}>
+                      Known by the whole party: {partyKnownBlueprintIds.size} of {BLUEPRINT_CATALOG.length}
+                    </div>
+                  </div>
+
+                  {assignmentMessage ? (
+                    <div className="wt-item">
+                      <div className="wt-itemName">{assignmentMessage}</div>
+                    </div>
+                  ) : null}
+
+                  <div className="wt-scrollPanel" style={{ display: "grid", gap: 10, maxHeight: 560 }}>
+                    {filteredBlueprints.map((blueprint) => {
+                      const known = isBlueprintKnownByWholeParty(blueprint.id);
+
+                      return (
+                        <div key={blueprint.id} className="wt-item">
+                          <div className="wt-itemTop" style={{ alignItems: "flex-start", gap: 12 }}>
+                            <div style={{ flex: 1 }}>
+                              <div className="wt-itemName">{blueprint.name}</div>
+                              <div className="wt-muted" style={{ fontSize: 12 }}>
+                                {blueprint.category}
+                              </div>
+                              <div className="wt-muted" style={{ fontSize: 12, lineHeight: 1.55, marginTop: 8 }}>
+                                {blueprint.description}
+                              </div>
+
+                              <div className="wt-chipRow">
+                                {formatModChips(blueprint.statMods).map((chip) => (
+                                  <span key={chip} className="wt-chip">
+                                    {chip}
+                                  </span>
+                                ))}
+                                {typeof blueprint.mutationCost === "number" ? (
+                                  <span className="wt-chip">+{blueprint.mutationCost} Mutation</span>
+                                ) : null}
+                                {typeof blueprint.humanityLoss === "number" ? (
+                                  <span className="wt-chip">-{blueprint.humanityLoss} Humanity</span>
+                                ) : null}
+                              </div>
+                            </div>
+
+                            <div style={{ display: "grid", gap: 8, justifyItems: "end" }}>
+                              <span className="wt-tag">{known ? "Known" : "Unknown"}</span>
+
+                              <button
+                                type="button"
+                                className="wt-btn wt-btnPrimary wt-btnSmall"
+                                onClick={() => revealBlueprintToParty(blueprint.id)}
+                                disabled={known || revealingBlueprintId === blueprint.id}
+                              >
+                                {revealingBlueprintId === blueprint.id ? "Revealing..." : "Reveal to Party"}
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+
+                    {filteredBlueprints.length === 0 ? (
+                      <div className="wt-item">
+                        <div className="wt-muted" style={{ fontSize: 12 }}>
+                          No blueprints matched that search.
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
+                </>
+              )}
+            </div>
+          </section>
         </div>
 
         <section className="wt-card">
@@ -2216,6 +2403,24 @@ export default function GmPage() {
                                         </div>
                                       ) : null}
                                     </div>
+                                  );
+                                })
+                              )}
+                            </div>
+                          </div>
+
+                          <div>
+                            <div className="wt-kicker">Known Blueprints</div>
+                            <div className="wt-chipRow" style={{ marginTop: 8 }}>
+                              {(character.knownBlueprintIds ?? []).length === 0 ? (
+                                <span className="wt-chip">No known blueprints</span>
+                              ) : (
+                                (character.knownBlueprintIds ?? []).map((blueprintId) => {
+                                  const blueprint = BLUEPRINT_CATALOG.find((entry) => entry.id === blueprintId);
+                                  return (
+                                    <span key={blueprintId} className="wt-chip">
+                                      {blueprint?.name || blueprintId}
+                                    </span>
                                   );
                                 })
                               )}
