@@ -223,6 +223,11 @@ export default function GmPage() {
       { name: string; description: string; ATT: string; TEC: string; CHA: string; DEF: string; HEA: string }
     >
   >({});
+  const [assistantMessages, setAssistantMessages] = useState<
+    Array<{ role: "user" | "assistant"; content: string; actions?: string[] }>
+  >([]);
+  const [assistantInput, setAssistantInput] = useState("");
+  const [assistantSending, setAssistantSending] = useState(false);
 
   const firebaseProjectId =
     process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || "missing-project-id";
@@ -307,6 +312,11 @@ export default function GmPage() {
   useEffect(() => {
     setAssignmentMessage("");
   }, [selectedCharacterId, selectedGameId, graftSearch]);
+
+  useEffect(() => {
+    setAssistantMessages([]);
+    setAssistantInput("");
+  }, [selectedGameId]);
 
   function resolveFromModule(itemId: string): ItemResolved | null {
     const mod = itemsModule;
@@ -1079,6 +1089,56 @@ export default function GmPage() {
     }
   }
 
+  async function sendAssistantMessage() {
+    if (!user || !selectedGameId) return;
+
+    const text = assistantInput.trim();
+    if (!text) return;
+
+    const history = assistantMessages.map((m) => ({ role: m.role, content: m.content }));
+
+    setAssistantMessages((prev) => [...prev, { role: "user", content: text }]);
+    setAssistantInput("");
+    setAssistantSending(true);
+    setError("");
+
+    try {
+      const idToken = await user.getIdToken();
+
+      const res = await fetch("/api/gm-assistant", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({ message: text, gameId: selectedGameId, history }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data?.error || "The assistant request failed.");
+      }
+
+      setAssistantMessages((prev) => [
+        ...prev,
+        { role: "assistant", content: data.reply || "", actions: data.actions || [] },
+      ]);
+    } catch (err: any) {
+      console.error("[GM Dashboard] sendAssistantMessage failed", {
+        message: err?.message,
+        uid: user?.uid,
+        gameId: selectedGameId,
+      });
+      setAssistantMessages((prev) => [
+        ...prev,
+        { role: "assistant", content: err?.message || "Failed to reach the assistant." },
+      ]);
+    } finally {
+      setAssistantSending(false);
+    }
+  }
+
   if (loading) {
     return (
       <div className="wt-page">
@@ -1225,6 +1285,83 @@ export default function GmPage() {
         }}
       >
         <div style={{ display: "grid", gap: 18 }}>
+          <section className="wt-card">
+            <div className="wt-cardHeader">
+              <div className="wt-cardTitle">GM Assistant</div>
+              <div className="wt-cardSub">
+                Ask questions or tell it to remove a player, adjust health, or hand out items and grafts.
+              </div>
+            </div>
+
+            <div className="wt-cardBody" style={{ display: "grid", gap: 12 }}>
+              {!selectedGame ? (
+                <div className="wt-item">
+                  <div className="wt-muted" style={{ fontSize: 12 }}>
+                    Select a game first.
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <div className="wt-scrollPanel" style={{ display: "grid", gap: 10, maxHeight: 360 }}>
+                    {assistantMessages.length === 0 ? (
+                      <div className="wt-item">
+                        <div className="wt-muted" style={{ fontSize: 12 }}>
+                          Try "remove Dave", "give Jax a med patch", or "set Mira's health to 4".
+                        </div>
+                      </div>
+                    ) : (
+                      assistantMessages.map((m, idx) => (
+                        <div key={idx} className="wt-item">
+                          <div className="wt-kicker">{m.role === "user" ? "You" : "Assistant"}</div>
+                          <div
+                            className="wt-muted"
+                            style={{ fontSize: 13, lineHeight: 1.5, color: "var(--wt-text)", whiteSpace: "pre-wrap" }}
+                          >
+                            {m.content}
+                          </div>
+                          {m.actions && m.actions.length > 0 ? (
+                            <div className="wt-chipRow" style={{ marginTop: 8 }}>
+                              {m.actions.map((a, i) => (
+                                <span key={i} className="wt-chip">
+                                  {a}
+                                </span>
+                              ))}
+                            </div>
+                          ) : null}
+                        </div>
+                      ))
+                    )}
+                  </div>
+
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <input
+                      className="wt-input"
+                      type="text"
+                      placeholder="Tell the assistant what to do..."
+                      value={assistantInput}
+                      onChange={(e) => setAssistantInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && !assistantSending) {
+                          sendAssistantMessage();
+                        }
+                      }}
+                      style={{ flex: 1 }}
+                      disabled={assistantSending}
+                    />
+                    <button
+                      type="button"
+                      className="wt-btn wt-btnPrimary"
+                      onClick={sendAssistantMessage}
+                      disabled={assistantSending || !assistantInput.trim()}
+                    >
+                      {assistantSending ? "Thinking..." : "Send"}
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          </section>
+
           <section className="wt-card">
             <div className="wt-cardHeader">
               <div className="wt-cardTitle">Active / Ended Sessions</div>

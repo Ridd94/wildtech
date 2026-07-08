@@ -10,6 +10,7 @@
     "migrate:grafts": "node scripts/migrate-humanity.js"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.110.0",
     "firebase": "^12.10.0",
     "firebase-admin": "^13.4.0",
     "next": "16.1.6",
