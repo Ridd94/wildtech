@@ -22,7 +22,7 @@ const TABS: Tab[] = [
   { href: "/gm/history", label: "Game History", restricted: true },
   { href: "/tables/loot", label: "Loot Table", restricted: true },
   { href: "/tables/blueprints", label: "Blueprint Table", restricted: true },
-  { href: "/tables/spells", label: "Spell Table", restricted: true },
+  { href: "/tables/grafts", label: "Graft Table", restricted: true },
 ];
 
 function getUserLabel(user: any) {
