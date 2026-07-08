@@ -38,6 +38,7 @@ type SavedRosterCharacter = {
   bonusText: string;
   statMods: StatMods;
   equipment: string[];
+  customItems: ItemResolved[];
   mutationLevel: number;
   humanity: number;
   grafts: CharacterGraft[];
@@ -66,6 +67,7 @@ type CharacterDoc = {
   bonusText: string;
   statMods: StatMods;
   equipment: string[];
+  customItems?: ItemResolved[];
   mutationLevel?: number;
   humanity?: number;
   grafts?: CharacterGraft[];
@@ -174,13 +176,13 @@ function humanityTotal(character: CharacterDoc) {
 }
 
 function formatDate(value: any) {
-  if (!value) return "—";
+  if (!value) return "â";
 
   if (typeof value?.toDate === "function") {
     try {
       return value.toDate().toLocaleString();
     } catch {
-      return "—";
+      return "â";
     }
   }
 
@@ -188,11 +190,11 @@ function formatDate(value: any) {
     try {
       return new Date(value.seconds * 1000).toLocaleString();
     } catch {
-      return "—";
+      return "â";
     }
   }
 
-  return "—";
+  return "â";
 }
 
 export default function GmPage() {
@@ -212,6 +214,15 @@ export default function GmPage() {
   const [graftSearch, setGraftSearch] = useState("");
   const [assigningGraftId, setAssigningGraftId] = useState<string>("");
   const [assignmentMessage, setAssignmentMessage] = useState("");
+  const [itemBusyId, setItemBusyId] = useState<string>("");
+  const [itemMessages, setItemMessages] = useState<Record<string, string>>({});
+  const [selectedPresetItem, setSelectedPresetItem] = useState<Record<string, string>>({});
+  const [customItemForms, setCustomItemForms] = useState<
+    Record<
+      string,
+      { name: string; description: string; ATT: string; TEC: string; CHA: string; DEF: string; HEA: string }
+    >
+  >({});
 
   const firebaseProjectId =
     process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || "missing-project-id";
@@ -223,6 +234,50 @@ export default function GmPage() {
     }
     return map;
   }, []);
+
+  const presetCatalog = useMemo(() => {
+    const map = new Map<string, ItemResolved>();
+
+    for (const item of FALLBACK_ITEMS) {
+      map.set(item.id, item);
+    }
+
+    const mod = itemsModule;
+    const list =
+      mod?.ITEMS ||
+      mod?.items ||
+      mod?.ITEM_LIST ||
+      mod?.ALL_ITEMS ||
+      mod?.default?.ITEMS ||
+      mod?.default?.items ||
+      null;
+
+    if (Array.isArray(list)) {
+      for (const entry of list) {
+        if (!entry?.id) continue;
+        map.set(entry.id, {
+          id: entry.id,
+          name: entry.name || entry.title || entry.id,
+          description: entry.description || entry.desc || "",
+          tags: entry.tags || [],
+          mods: entry.statMods || entry.mods || entry.bonus || {},
+        });
+      }
+    } else if (list && typeof list === "object") {
+      for (const entry of Object.values(list) as any[]) {
+        if (!entry?.id) continue;
+        map.set(entry.id, {
+          id: entry.id,
+          name: entry.name || entry.title || entry.id,
+          description: entry.description || entry.desc || "",
+          tags: entry.tags || [],
+          mods: entry.statMods || entry.mods || entry.bonus || {},
+        });
+      }
+    }
+
+    return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name));
+  }, [itemsModule]);
 
   const isAllowedGm = !!user?.email && user.email.toLowerCase() === GM_EMAIL.toLowerCase();
 
@@ -301,7 +356,9 @@ export default function GmPage() {
     return null;
   }
 
-  function resolveItem(itemId: string): ItemResolved {
+  function resolveItem(itemId: string, customItems?: ItemResolved[]): ItemResolved {
+    const custom = customItems?.find((entry) => entry.id === itemId);
+    if (custom) return custom;
     const fromModule = resolveFromModule(itemId);
     if (fromModule) return fromModule;
     if (fallbackMap[itemId]) return fallbackMap[itemId];
@@ -314,7 +371,7 @@ export default function GmPage() {
   }
 
   function getResolvedEquipment(character: CharacterDoc) {
-    return (character.equipment ?? []).map(resolveItem);
+    return (character.equipment ?? []).map((itemId) => resolveItem(itemId, character.customItems));
   }
 
   function totalStat(character: CharacterDoc, key: keyof StatMods) {
@@ -361,6 +418,7 @@ export default function GmPage() {
       bonusText: character.bonusText,
       statMods: character.statMods || {},
       equipment: Array.isArray(character.equipment) ? character.equipment : [],
+      customItems: Array.isArray(character.customItems) ? character.customItems : [],
       mutationLevel: typeof character.mutationLevel === "number" ? character.mutationLevel : 0,
       humanity: typeof character.humanity === "number" ? character.humanity : 10,
       grafts: Array.isArray(character.grafts) ? character.grafts : [],
@@ -838,11 +896,194 @@ export default function GmPage() {
     }
   }
 
+  function makeCustomItemId() {
+    return `custom-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+  }
+
+  function getCustomItemForm(characterId: string) {
+    return (
+      customItemForms[characterId] ?? {
+        name: "",
+        description: "",
+        ATT: "",
+        TEC: "",
+        CHA: "",
+        DEF: "",
+        HEA: "",
+      }
+    );
+  }
+
+  function updateCustomItemForm(characterId: string, patch: Partial<ReturnType<typeof getCustomItemForm>>) {
+    setCustomItemForms((prev) => ({
+      ...prev,
+      [characterId]: { ...getCustomItemForm(characterId), ...patch },
+    }));
+  }
+
+  async function addItemToCharacter(characterId: string, itemId: string) {
+    const target = joinedCharacters.find((c) => c.id === characterId);
+    if (!target || !itemId) return;
+
+    const current = Array.isArray(target.equipment) ? target.equipment : [];
+
+    if (current.includes(itemId)) {
+      setItemMessages((prev) => ({ ...prev, [characterId]: "That item is already equipped." }));
+      return;
+    }
+
+    setItemBusyId(characterId);
+    setError("");
+
+    try {
+      await updateDoc(doc(db, "characters", characterId), {
+        equipment: [...current, itemId],
+        updatedAt: serverTimestamp(),
+      });
+      setItemMessages((prev) => ({ ...prev, [characterId]: "" }));
+    } catch (err: any) {
+      console.error("[GM Dashboard] addItemToCharacter failed", {
+        message: err?.message,
+        code: err?.code,
+        characterId,
+        itemId,
+        uid: user?.uid,
+        projectId: firebaseProjectId,
+      });
+      setError(err?.message || "Failed to add item.");
+    } finally {
+      setItemBusyId("");
+    }
+  }
+
+  async function removeItemFromCharacter(characterId: string, itemId: string) {
+    const target = joinedCharacters.find((c) => c.id === characterId);
+    if (!target) return;
+
+    const current = Array.isArray(target.equipment) ? target.equipment : [];
+    if (!current.includes(itemId)) return;
+
+    setItemBusyId(characterId);
+    setError("");
+
+    try {
+      const nextCustomItems = (target.customItems ?? []).filter((entry) => entry.id !== itemId);
+
+      await updateDoc(doc(db, "characters", characterId), {
+        equipment: current.filter((id) => id !== itemId),
+        customItems: nextCustomItems,
+        updatedAt: serverTimestamp(),
+      });
+    } catch (err: any) {
+      console.error("[GM Dashboard] removeItemFromCharacter failed", {
+        message: err?.message,
+        code: err?.code,
+        characterId,
+        itemId,
+        uid: user?.uid,
+        projectId: firebaseProjectId,
+      });
+      setError(err?.message || "Failed to remove item.");
+    } finally {
+      setItemBusyId("");
+    }
+  }
+
+  async function addCustomItemToCharacter(characterId: string) {
+    const target = joinedCharacters.find((c) => c.id === characterId);
+    if (!target) return;
+
+    const form = getCustomItemForm(characterId);
+    const name = form.name.trim();
+
+    if (!name) {
+      setItemMessages((prev) => ({ ...prev, [characterId]: "Give the custom item a name first." }));
+      return;
+    }
+
+    const mods: StatMods = {};
+    (["ATT", "TEC", "CHA", "DEF", "HEA"] as const).forEach((key) => {
+      const parsed = form[key] ? Number(form[key]) : 0;
+      if (Number.isFinite(parsed) && parsed !== 0) {
+        mods[key] = parsed;
+      }
+    });
+
+    const newItem: ItemResolved = {
+      id: makeCustomItemId(),
+      name,
+      description: form.description.trim(),
+      mods,
+    };
+
+    const currentEquipment = Array.isArray(target.equipment) ? target.equipment : [];
+    const currentCustom = Array.isArray(target.customItems) ? target.customItems : [];
+
+    setItemBusyId(characterId);
+    setError("");
+
+    try {
+      await updateDoc(doc(db, "characters", characterId), {
+        equipment: [...currentEquipment, newItem.id],
+        customItems: [...currentCustom, newItem],
+        updatedAt: serverTimestamp(),
+      });
+
+      setCustomItemForms((prev) => ({
+        ...prev,
+        [characterId]: { name: "", description: "", ATT: "", TEC: "", CHA: "", DEF: "", HEA: "" },
+      }));
+      setItemMessages((prev) => ({ ...prev, [characterId]: `${newItem.name} added.` }));
+    } catch (err: any) {
+      console.error("[GM Dashboard] addCustomItemToCharacter failed", {
+        message: err?.message,
+        code: err?.code,
+        characterId,
+        uid: user?.uid,
+        projectId: firebaseProjectId,
+      });
+      setError(err?.message || "Failed to add custom item.");
+    } finally {
+      setItemBusyId("");
+    }
+  }
+
+  async function removePlayerFromGame(characterId: string) {
+    const target = joinedCharacters.find((c) => c.id === characterId);
+    if (!target) return;
+
+    const confirmed = window.confirm(
+      `Remove ${target.name} from this game? They'll be dropped from the live session and can rejoin later with the game code.`
+    );
+    if (!confirmed) return;
+
+    setItemBusyId(characterId);
+    setError("");
+
+    try {
+      await updateDoc(doc(db, "characters", characterId), {
+        activeGameId: null,
+        updatedAt: serverTimestamp(),
+      });
+    } catch (err: any) {
+      console.error("[GM Dashboard] removePlayerFromGame failed", {
+        message: err?.message,
+        code: err?.code,
+        characterId,
+        uid: user?.uid,
+        projectId: firebaseProjectId,
+      });
+      setError(err?.message || "Failed to remove player from game.");
+    } finally {
+      setItemBusyId("");
+    }
+  }
+
   if (loading) {
     return (
       <div className="wt-page">
         <div className="wt-card">
-          <div className="wt-cardBody">Loading GM dashboard…</div>
+          <div className="wt-cardBody">Loading GM dashboardâ¦</div>
         </div>
       </div>
     );
@@ -1188,7 +1429,7 @@ export default function GmPage() {
             <div className="wt-cardHeader">
               <div className="wt-cardTitle">Graft Assignment Console</div>
               <div className="wt-cardSub">
-                Unlock grafts for a live player. They will appear in that player’s Prototype Grafts list until installed.
+                Unlock grafts for a live player. They will appear in that playerâs Prototype Grafts list until installed.
               </div>
             </div>
 
@@ -1216,7 +1457,7 @@ export default function GmPage() {
                     >
                       {joinedCharacters.map((character) => (
                         <option key={character.id} value={character.id}>
-                          {character.name} — {character.className}
+                          {character.name} â {character.className}
                         </option>
                       ))}
                     </select>
@@ -1239,7 +1480,7 @@ export default function GmPage() {
                         <div>
                           <div className="wt-itemName">{selectedCharacter.name}</div>
                           <div className="wt-muted" style={{ fontSize: 12 }}>
-                            Installed: {(selectedCharacter.grafts ?? []).length} • Unlocked:{" "}
+                            Installed: {(selectedCharacter.grafts ?? []).length} â¢ Unlocked:{" "}
                             {(selectedCharacter.availableGraftIds ?? []).length}
                           </div>
                         </div>
@@ -1434,6 +1675,16 @@ export default function GmPage() {
                         <Link href={`/character/${character.id}`} className="wt-btn wt-btnSmall">
                           Open Sheet
                         </Link>
+
+                        <button
+                          type="button"
+                          className="wt-btn wt-btnSmall"
+                          style={{ borderColor: "rgba(239,68,68,0.45)", color: "#fecaca" }}
+                          onClick={() => removePlayerFromGame(character.id)}
+                          disabled={itemBusyId === character.id}
+                        >
+                          {itemBusyId === character.id ? "Working..." : "Remove From Game"}
+                        </button>
                       </div>
                     </div>
 
@@ -1624,7 +1875,18 @@ export default function GmPage() {
                                           </div>
                                         ) : null}
                                       </div>
-                                      <span className="wt-tag">Gear</span>
+                                      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                                        <span className="wt-tag">Gear</span>
+                                        <button
+                                          type="button"
+                                          className="wt-btn wt-btnSmall"
+                                          style={{ borderColor: "rgba(239,68,68,0.45)", color: "#fecaca" }}
+                                          onClick={() => removeItemFromCharacter(character.id, item.id)}
+                                          disabled={itemBusyId === character.id}
+                                        >
+                                          Remove
+                                        </button>
+                                      </div>
                                     </div>
 
                                     <div className="wt-chipRow">
@@ -1641,6 +1903,102 @@ export default function GmPage() {
                                   </div>
                                 ))
                               )}
+                            </div>
+
+                            <div className="wt-item" style={{ marginTop: 10, display: "grid", gap: 10 }}>
+                              <div className="wt-kicker">Give Item</div>
+
+                              <div className="wt-chipRow" style={{ alignItems: "center" }}>
+                                <select
+                                  className="wt-input"
+                                  style={{ flex: 1, minWidth: 180 }}
+                                  value={selectedPresetItem[character.id] ?? ""}
+                                  onChange={(e) =>
+                                    setSelectedPresetItem((prev) => ({
+                                      ...prev,
+                                      [character.id]: e.target.value,
+                                    }))
+                                  }
+                                >
+                                  <option value="">Choose a preset item...</option>
+                                  {presetCatalog.map((item) => (
+                                    <option key={item.id} value={item.id}>
+                                      {item.name}
+                                    </option>
+                                  ))}
+                                </select>
+                                <button
+                                  type="button"
+                                  className="wt-btn wt-btnPrimary wt-btnSmall"
+                                  onClick={() =>
+                                    selectedPresetItem[character.id]
+                                      ? addItemToCharacter(character.id, selectedPresetItem[character.id])
+                                      : undefined
+                                  }
+                                  disabled={
+                                    itemBusyId === character.id || !selectedPresetItem[character.id]
+                                  }
+                                >
+                                  Add Item
+                                </button>
+                              </div>
+
+                              <div style={{ display: "grid", gap: 8 }}>
+                                <div className="wt-kicker">Custom Item</div>
+                                <input
+                                  type="text"
+                                  className="wt-input"
+                                  placeholder="Item name"
+                                  value={getCustomItemForm(character.id).name}
+                                  onChange={(e) =>
+                                    updateCustomItemForm(character.id, { name: e.target.value })
+                                  }
+                                />
+                                <input
+                                  type="text"
+                                  className="wt-input"
+                                  placeholder="Description (optional)"
+                                  value={getCustomItemForm(character.id).description}
+                                  onChange={(e) =>
+                                    updateCustomItemForm(character.id, { description: e.target.value })
+                                  }
+                                />
+                                <div
+                                  style={{
+                                    display: "grid",
+                                    gridTemplateColumns: "repeat(5, minmax(0, 1fr))",
+                                    gap: 8,
+                                  }}
+                                >
+                                  {(["ATT", "TEC", "CHA", "DEF", "HEA"] as const).map((key) => (
+                                    <input
+                                      key={key}
+                                      type="number"
+                                      className="wt-input"
+                                      placeholder={key}
+                                      value={getCustomItemForm(character.id)[key]}
+                                      onChange={(e) =>
+                                        updateCustomItemForm(character.id, { [key]: e.target.value })
+                                      }
+                                    />
+                                  ))}
+                                </div>
+                                <button
+                                  type="button"
+                                  className="wt-btn wt-btnPrimary wt-btnSmall"
+                                  style={{ width: "fit-content" }}
+                                  onClick={() => addCustomItemToCharacter(character.id)}
+                                  disabled={itemBusyId === character.id}
+                                >
+                                  Add Custom Item
+                                </button>
+                              </div>
+
+                              {itemMessages[character.id] ? (
+                                <div className="wt-muted" style={{ fontSize: 12 }}>
+                                  {itemMessages[character.id]}
+                                </div>
+                              ) : null}
                             </div>
                           </div>
 

@@ -49,6 +49,7 @@ type CharacterDoc = {
   bonusText: string;
   statMods: StatMods;
   equipment: string[];
+  customItems?: ItemResolved[];
   activeGameId: string | null;
   mutationLevel?: number;
   humanity?: number;
@@ -142,7 +143,7 @@ function formatModChips(mods?: StatMods) {
 }
 
 function tsToText(value: any) {
-  if (!value) return "—";
+  if (!value) return "â";
 
   try {
     if (typeof value?.toDate === "function") {
@@ -157,7 +158,7 @@ function tsToText(value: any) {
     if (!Number.isNaN(dt.getTime())) return dt.toLocaleString();
   } catch {}
 
-  return "—";
+  return "â";
 }
 
 function SectionCard({
@@ -468,6 +469,8 @@ export default function CharacterSheetPage() {
   }
 
   function resolveItem(itemId: string): ItemResolved {
+    const custom = character?.customItems?.find((entry) => entry.id === itemId);
+    if (custom) return custom;
     const fromMod = resolveFromModule(itemId);
     if (fromMod) return fromMod;
     if (fallbackMap[itemId]) return fallbackMap[itemId];
@@ -477,7 +480,7 @@ export default function CharacterSheetPage() {
   const equippedIds = character?.equipment ?? [];
   const equippedItems = useMemo(
     () => equippedIds.map(resolveItem),
-    [equippedIds, itemsModule, fallbackMap]
+    [equippedIds, itemsModule, fallbackMap, character?.customItems]
   );
 
   const armoryItems: ItemResolved[] = useMemo(() => {
@@ -742,13 +745,13 @@ export default function CharacterSheetPage() {
     character?.activeGameId ? `In Session ${activeGameCode ? `(${activeGameCode})` : ""}` : "No Active Session",
   ]
     .filter(Boolean)
-    .join(" • ");
+    .join(" â¢ ");
 
   if (loading) {
     return (
       <div className="wt-page">
         <div className="wt-card">
-          <div className="wt-cardBody">Loading character…</div>
+          <div className="wt-cardBody">Loading characterâ¦</div>
         </div>
       </div>
     );
@@ -777,7 +780,7 @@ export default function CharacterSheetPage() {
       <div className="wt-subheader">
         <div className="wt-subLeft">
           <Link href="/character/vault" className="wt-btn" aria-label="Back to Character Vault">
-            ← <span style={{ marginLeft: 6 }}>Character Vault</span>
+            â <span style={{ marginLeft: 6 }}>Character Vault</span>
           </Link>
 
           <span className="wt-pill wt-pillMuted">
@@ -881,7 +884,7 @@ export default function CharacterSheetPage() {
 
         <div className="wt-healthLine">
           <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-            <span style={{ color: "var(--wt-red)" }}>❤</span>
+            <span style={{ color: "var(--wt-red)" }}>â¤</span>
             <span>
               Health: <strong style={{ color: "var(--wt-text)" }}>{currentHp}</strong> / {maxHp}
             </span>
@@ -1396,7 +1399,7 @@ export default function CharacterSheetPage() {
             badge="Passive"
           >
             <div className="wt-item">
-              <div className="wt-itemName">{character.classBonusName || character.bonusName || "—"}</div>
+              <div className="wt-itemName">{character.classBonusName || character.bonusName || "â"}</div>
               <div className="wt-muted" style={{ fontSize: 12, lineHeight: 1.55, marginTop: 6 }}>
                 {character.classBonusText || character.bonusText || "No bonus text."}
               </div>
@@ -1409,7 +1412,7 @@ export default function CharacterSheetPage() {
         <div className="wt-debugDock">
           <div className="wt-debugInner">
             <div>
-              <strong>Debug</strong> — character id: <span className="wt-muted">{String(id)}</span>
+              <strong>Debug</strong> â character id: <span className="wt-muted">{String(id)}</span>
             </div>
             <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
               <span className="wt-muted">Equipped: {equippedIds.join(", ") || "none"}</span>
