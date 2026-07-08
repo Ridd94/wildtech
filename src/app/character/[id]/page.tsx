@@ -488,37 +488,6 @@ export default function CharacterSheetPage() {
     [equippedIds, itemsModule, fallbackMap, character?.customItems]
   );
 
-  const armoryItems: ItemResolved[] = useMemo(() => {
-    const mod = itemsModule;
-
-    const list =
-      mod?.ITEMS ||
-      mod?.items ||
-      mod?.ITEM_LIST ||
-      mod?.ALL_ITEMS ||
-      mod?.default?.ITEMS ||
-      mod?.default?.items ||
-      null;
-
-    const normalize = (x: any): ItemResolved => ({
-      id: String(x?.id ?? ""),
-      name: x?.name || x?.title || String(x?.id ?? "Unknown"),
-      description: x?.description || x?.desc || "",
-      tags: x?.tags || [],
-      mods: x?.statMods || x?.mods || x?.bonus || {},
-    });
-
-    if (Array.isArray(list)) {
-      return list.map(normalize).filter((x: ItemResolved) => x.id);
-    }
-
-    if (list && typeof list === "object") {
-      return Object.values(list).map(normalize).filter((x: ItemResolved) => x.id);
-    }
-
-    return FALLBACK_ITEMS.filter((x) => !["knife", "pistol"].includes(x.id));
-  }, [itemsModule]);
-
   const grafts = character?.grafts ?? [];
   const availableGraftIds = character?.availableGraftIds ?? [];
   const graftTotals = useMemo(() => getGraftTotals(grafts), [grafts]);
@@ -587,20 +556,6 @@ export default function CharacterSheetPage() {
     await persistCharacterPatch({
       equipment: nextIds,
     });
-  }
-
-  async function onEquip(itemId: string) {
-    if (!character) return;
-
-    const current = character.equipment ?? [];
-    if (current.includes(itemId)) return;
-
-    if (current.length >= EQUIP_LIMIT) {
-      alert(`Equip limit reached (${EQUIP_LIMIT}). Unequip something first.`);
-      return;
-    }
-
-    await persistEquipment([...current, itemId]);
   }
 
   async function onUnequip(itemId: string) {
@@ -1229,120 +1184,44 @@ export default function CharacterSheetPage() {
 
           <SectionCard
             title="Equipment"
-            sub="Equipped loadout, armory access, and stat-affecting item changes."
+            sub="Gear your GM has given you. New items appear here automatically."
             badge={`${equippedIds.length}/${EQUIP_LIMIT}`}
           >
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-                gap: 14,
-              }}
-            >
-              <div style={{ display: "grid", gap: 10 }}>
-                <div className="wt-listHeader">
-                  <div className="wt-sectionLabel" style={{ margin: 0 }}>
-                    Equipped Gear
+            <div className="wt-scrollPanel" style={{ display: "grid", gap: 10, maxHeight: 520 }}>
+              {equippedItems.length === 0 ? (
+                <div className="wt-item">
+                  <div className="wt-muted" style={{ fontSize: 12 }}>
+                    Nothing equipped yet. Ask your GM to hand out gear.
                   </div>
-                  <span className="wt-badge">{equippedIds.length}</span>
                 </div>
+              ) : (
+                equippedItems.map((it) => (
+                  <div key={it.id} className="wt-item">
+                    <div className="wt-itemTop">
+                      <div>
+                        <div className="wt-itemName">{it.name}</div>
+                        {it.description ? (
+                          <div className="wt-muted" style={{ fontSize: 12 }}>
+                            {it.description}
+                          </div>
+                        ) : null}
 
-                <div className="wt-scrollPanel" style={{ display: "grid", gap: 10, maxHeight: 520 }}>
-                  {equippedItems.length === 0 ? (
-                    <div className="wt-item">
-                      <div className="wt-muted" style={{ fontSize: 12 }}>
-                        Nothing equipped yet.
+                        <div className="wt-chipRow">
+                          {formatModChips(it.mods).map((chip) => (
+                            <span key={chip} className="wt-chip">
+                              {chip}
+                            </span>
+                          ))}
+                        </div>
                       </div>
+
+                      <button className="wt-btn wt-btnSmall" onClick={() => onUnequip(it.id)}>
+                        Unequip
+                      </button>
                     </div>
-                  ) : (
-                    equippedItems.map((it) => (
-                      <div key={it.id} className="wt-item">
-                        <div className="wt-itemTop">
-                          <div>
-                            <div className="wt-itemName">{it.name}</div>
-                            {it.description ? (
-                              <div className="wt-muted" style={{ fontSize: 12 }}>
-                                {it.description}
-                              </div>
-                            ) : null}
-
-                            <div className="wt-chipRow">
-                              {formatModChips(it.mods).map((chip) => (
-                                <span key={chip} className="wt-chip">
-                                  {chip}
-                                </span>
-                              ))}
-                            </div>
-                          </div>
-
-                          <button className="wt-btn wt-btnSmall" onClick={() => onUnequip(it.id)}>
-                            Unequip
-                          </button>
-                        </div>
-                      </div>
-                    ))
-                  )}
-                </div>
-              </div>
-
-              <div style={{ display: "grid", gap: 10 }}>
-                <div className="wt-listHeader">
-                  <div className="wt-sectionLabel" style={{ margin: 0 }}>
-                    Armory
                   </div>
-                  <span className="wt-badge">Items</span>
-                </div>
-
-                <div className="wt-scrollPanel" style={{ display: "grid", gap: 10, maxHeight: 520 }}>
-                  {armoryItems.map((it) => {
-                    const isEquipped = equippedIds.includes(it.id);
-                    return (
-                      <div key={it.id} className="wt-item">
-                        <div className="wt-itemTop">
-                          <div>
-                            <div className="wt-itemName">{it.name}</div>
-
-                            <div className="wt-chipRow">
-                              {isEquipped ? (
-                                <span className="wt-tag wt-tagEquipped">Equipped</span>
-                              ) : (
-                                <span className="wt-tag">Available</span>
-                              )}
-                            </div>
-
-                            {it.description ? (
-                              <div className="wt-muted" style={{ fontSize: 12, marginTop: 6 }}>
-                                {it.description}
-                              </div>
-                            ) : null}
-
-                            <div className="wt-chipRow">
-                              {formatModChips(it.mods).map((chip) => (
-                                <span key={chip} className="wt-chip">
-                                  {chip}
-                                </span>
-                              ))}
-                            </div>
-                          </div>
-
-                          {isEquipped ? (
-                            <button className="wt-btn wt-btnSmall" onClick={() => onUnequip(it.id)}>
-                              Unequip
-                            </button>
-                          ) : (
-                            <button
-                              className="wt-btn wt-btnPrimary wt-btnSmall"
-                              onClick={() => onEquip(it.id)}
-                            >
-                              Equip
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
+                ))
+              )}
             </div>
           </SectionCard>
 
