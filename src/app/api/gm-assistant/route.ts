@@ -51,10 +51,15 @@ export async function POST(req: Request) {
     return Response.json({ error: "Game not found." }, { status: 404 });
   }
 
-  const game = gameSnap.data() as { gmId?: string; code?: string };
+  const game = gameSnap.data() as { gmId?: string; code?: string; scrapAmount?: number };
   if (game.gmId !== decoded.uid) {
     return Response.json({ error: "You do not GM this game." }, { status: 403 });
   }
+
+  const gameContext = {
+    id: gameId,
+    scrapAmount: typeof game.scrapAmount === "number" ? game.scrapAmount : 0,
+  };
 
   const charactersSnap = await adminDb.collection("characters").where("activeGameId", "==", gameId).get();
   const roster: JoinedCharacter[] = charactersSnap.docs.map((doc) => ({
@@ -75,16 +80,19 @@ export async function POST(req: Request) {
       const grafts = (c.grafts ?? []).map((g) => g.name).join(", ") || "none";
       const unlocked = (c.availableGraftIds ?? []).join(", ") || "none";
       const knownBlueprints = (c.knownBlueprintIds ?? []).join(", ") || "none";
-      return `- id: ${c.id} | name: ${c.name} | class: ${c.className ?? "unknown"} | HP: ${c.currentHp ?? 10}/${
+      const soulCharges = c.classId === "soul-slinger" ? `${c.soulCharges ?? 5}/5` : "n/a (not a Soul-Slinger)";
+      return `- id: ${c.id} | name: ${c.name} | class: ${c.className ?? "unknown"} (classId: ${
+        c.classId ?? "unknown"
+      }) | HP: ${c.currentHp ?? 10}/${
         c.maxHp ?? 10
-      } | mutation: ${c.mutationLevel ?? 0} | humanity: ${c.humanity ?? 10} | equipment: ${equipment} | installed grafts: ${grafts} | unlocked graft ids: ${unlocked} | known blueprint ids: ${knownBlueprints}`;
+      } | mutation: ${c.mutationLevel ?? 0} | humanity: ${c.humanity ?? 10} | soul charges: ${soulCharges} | equipment: ${equipment} | installed grafts: ${grafts} | unlocked graft ids: ${unlocked} | known blueprint ids: ${knownBlueprints}`;
     })
     .join("\n");
 
   const itemCatalogLines = PRESET_ITEM_CATALOG.map((i) => `${i.id}: ${i.name}`).join("\n");
   const graftCatalogLines = GRAFT_ID_NAME_CATALOG.map((g) => `${g.id}: ${g.name}`).join("\n");
 
-  const system = `You are the GM's assistant for a live WildTech tabletop session. Game code: ${game.code ?? "unknown"}.
+  const system = `You are the GM's assistant for a live WildTech tabletop session. Game code: ${game.code ?? "unknown"}. Party Scrap: ${gameContext.scrapAmount}/20.
 
 Current players in this session (including what blueprints each already knows):
 ${rosterLines}
@@ -95,9 +103,11 @@ ${itemCatalogLines}
 Graft catalog (id: name):
 ${graftCatalogLines}
 
-Use the provided tools to carry out requests to change a player's health, items, or grafts, or to remove a player from the session. Always resolve player names to the exact character "id" shown above before calling a tool — never invent an id. If a name is ambiguous (matches multiple players) or you can't find a match, ask a clarifying question instead of guessing. If a request is out of scope for your tools (e.g. ending or saving the game session), say so plainly rather than attempting it. Keep replies short and conversational.
+Use the provided tools to carry out requests to change a player's health, items, grafts, or Soul Charges, to remove a player from the session, or to adjust the party's shared Scrap. Always resolve player names to the exact character "id" shown above before calling a tool — never invent an id. If a name is ambiguous (matches multiple players) or you can't find a match, ask a clarifying question instead of guessing. If a request is out of scope for your tools (e.g. ending or saving the game session), say so plainly rather than attempting it. Keep replies short and conversational.
 
-Blueprints represent schematics the party has found. To reveal one, use "reveal_blueprint_to_party" with a blueprintId built from the graft or item catalogs above: "graft-<graftId>" for a graft blueprint (e.g. "graft-cybernetic-laser-eye") or "item-<itemId>" for an item blueprint (e.g. "item-gauss_rifle"). This always applies to every joined player at once, not a single character.`;
+Blueprints represent schematics the party has found. To reveal one, use "reveal_blueprint_to_party" with a blueprintId built from the graft or item catalogs above: "graft-<graftId>" for a graft blueprint (e.g. "graft-cybernetic-laser-eye") or "item-<itemId>" for an item blueprint (e.g. "item-gauss_rifle"). This always applies to every joined player at once, not a single character.
+
+Use "add_custom_graft" when a GM describes a graft that isn't in the catalog above — it installs immediately on the target character, same as a real graft. Use "set_soul_charges" only for Soul-Slinger characters (check the "class" / "classId" field on the roster above first); it fails harmlessly if used on a non-Soul-Slinger. Use "adjust_party_scrap" for requests about the party's shared Scrap pool (0-20) — it always sets the absolute value, so compute the new total yourself from the current Party Scrap value above when the request is a relative change (e.g. "give the party 5 scrap").`;
 
   const messages: Anthropic.MessageParam[] = [
     ...history.map((turn) => ({ role: turn.role, content: turn.content })),
@@ -132,7 +142,7 @@ Blueprints represent schematics the party has found. To reveal one, use "reveal_
     const toolResults: Anthropic.ToolResultBlockParam[] = [];
     for (const block of response.content) {
       if (block.type !== "tool_use") continue;
-      const result = await executeGmAssistantTool(adminDb, roster, block.name, block.input);
+      const result = await executeGmAssistantTool(adminDb, roster, block.name, block.input, gameContext);
       if ("summary" in result) {
         actions.push(result.summary);
         toolResults.push({ type: "tool_result", tool_use_id: block.id, content: result.summary });

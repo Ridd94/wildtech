@@ -58,6 +58,7 @@ type GameDoc = {
   endedAt?: any;
   savedAt?: any;
   savedRoster?: SavedRosterCharacter[];
+  scrapAmount?: number;
 };
 
 type CharacterDoc = {
@@ -76,12 +77,17 @@ type CharacterDoc = {
   grafts?: CharacterGraft[];
   availableGraftIds?: string[];
   knownBlueprintIds?: string[];
+  soulCharges?: number;
   activeGameId: string | null;
   currentHp?: number;
   maxHp?: number;
   createdAt?: any;
   updatedAt?: any;
 };
+
+const SOUL_SLINGER_CLASS_ID = "soul-slinger";
+const SOUL_CHARGE_MAX = 5;
+const SCRAP_MAX = 20;
 
 type JoinedCharacter = CharacterDoc & {
   id: string;
@@ -234,6 +240,23 @@ export default function GmPage() {
   >([]);
   const [assistantInput, setAssistantInput] = useState("");
   const [assistantSending, setAssistantSending] = useState(false);
+  const [customGraftForm, setCustomGraftForm] = useState({
+    name: "",
+    sourceEnemy: "",
+    ability: "",
+    ATT: "",
+    TEC: "",
+    CHA: "",
+    DEF: "",
+    HEA: "",
+    mutationCost: "",
+    humanityLoss: "",
+  });
+  const [grantingCustomGraft, setGrantingCustomGraft] = useState(false);
+  const [customGraftMessage, setCustomGraftMessage] = useState("");
+  const [soulChargeBusyId, setSoulChargeBusyId] = useState("");
+  const [scrapBusy, setScrapBusy] = useState(false);
+  const [scrapInput, setScrapInput] = useState("");
 
   const firebaseProjectId =
     process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || "missing-project-id";
@@ -753,6 +776,73 @@ export default function GmPage() {
     await adjustMaxHealth(characterId, parsed);
   }
 
+  async function adjustSoulCharges(characterId: string, nextValue: number) {
+    const target = joinedCharacters.find((c) => c.id === characterId);
+    if (!target) return;
+
+    const clamped = clamp(nextValue, 0, SOUL_CHARGE_MAX);
+
+    setSoulChargeBusyId(characterId);
+    setError("");
+
+    try {
+      await updateDoc(doc(db, "characters", characterId), {
+        soulCharges: clamped,
+        updatedAt: serverTimestamp(),
+      });
+    } catch (err: any) {
+      console.error("[GM Dashboard] adjustSoulCharges failed", {
+        message: err?.message,
+        code: err?.code,
+        characterId,
+        uid: user?.uid,
+        projectId: firebaseProjectId,
+      });
+      setError(err?.message || "Failed to update Soul Charges.");
+    } finally {
+      setSoulChargeBusyId("");
+    }
+  }
+
+  async function setExactSoulCharges(characterId: string, value: string) {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) return;
+    await adjustSoulCharges(characterId, parsed);
+  }
+
+  async function adjustPartyScrap(nextValue: number) {
+    if (!selectedGame) return;
+
+    const clamped = clamp(nextValue, 0, SCRAP_MAX);
+
+    setScrapBusy(true);
+    setError("");
+
+    try {
+      await updateDoc(doc(db, "games", selectedGame.id), {
+        scrapAmount: clamped,
+        updatedAt: serverTimestamp(),
+      });
+    } catch (err: any) {
+      console.error("[GM Dashboard] adjustPartyScrap failed", {
+        message: err?.message,
+        code: err?.code,
+        gameId: selectedGame.id,
+        uid: user?.uid,
+        projectId: firebaseProjectId,
+      });
+      setError(err?.message || "Failed to update party scrap.");
+    } finally {
+      setScrapBusy(false);
+    }
+  }
+
+  async function setExactPartyScrap(value: string) {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) return;
+    await adjustPartyScrap(parsed);
+  }
+
   async function closeGame(gameId: string) {
     setBusy(true);
     setError("");
@@ -940,6 +1030,86 @@ export default function GmPage() {
       setError(err?.message || "Failed to assign graft.");
     } finally {
       setAssigningGraftId("");
+    }
+  }
+
+  function makeCustomGraftId() {
+    return `custom-graft-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+  }
+
+  async function grantCustomGraftToCharacter(characterId: string) {
+    const character = joinedCharacters.find((entry) => entry.id === characterId);
+    if (!character) {
+      setCustomGraftMessage("Select a target player first.");
+      return;
+    }
+
+    const name = customGraftForm.name.trim();
+    if (!name) {
+      setCustomGraftMessage("Give the custom graft a name first.");
+      return;
+    }
+
+    const statBoost: StatMods = {};
+    (["ATT", "TEC", "CHA", "DEF", "HEA"] as const).forEach((key) => {
+      const val = customGraftForm[key] ? Number(customGraftForm[key]) : 0;
+      if (Number.isFinite(val) && val !== 0) statBoost[key] = val;
+    });
+
+    const mutationCost = Number(customGraftForm.mutationCost) || 0;
+    const humanityLoss = Number(customGraftForm.humanityLoss) || 0;
+
+    const newGraft: CharacterGraft = {
+      id: makeCustomGraftId(),
+      name,
+      sourceEnemy: customGraftForm.sourceEnemy.trim() || "GM Custom",
+      ability: customGraftForm.ability.trim() || "No ability text provided.",
+      statBoost,
+      mutationCost,
+      humanityLoss,
+    };
+
+    const currentGrafts = Array.isArray(character.grafts) ? character.grafts : [];
+    const nextGrafts = [...currentGrafts, newGraft];
+    const nextMutation = (character.mutationLevel ?? 0) + mutationCost;
+    const nextHumanity = Math.max(0, (character.humanity ?? 10) - humanityLoss);
+
+    setGrantingCustomGraft(true);
+    setError("");
+    setCustomGraftMessage("");
+
+    try {
+      await updateDoc(doc(db, "characters", characterId), {
+        grafts: nextGrafts,
+        mutationLevel: nextMutation,
+        humanity: nextHumanity,
+        updatedAt: serverTimestamp(),
+      });
+
+      setCustomGraftMessage(`Granted "${name}" to ${character.name}.`);
+      setCustomGraftForm({
+        name: "",
+        sourceEnemy: "",
+        ability: "",
+        ATT: "",
+        TEC: "",
+        CHA: "",
+        DEF: "",
+        HEA: "",
+        mutationCost: "",
+        humanityLoss: "",
+      });
+    } catch (err: any) {
+      console.error("[GM Dashboard] grantCustomGraftToCharacter failed", {
+        message: err?.message,
+        code: err?.code,
+        uid: user?.uid,
+        characterId,
+        projectId: firebaseProjectId,
+      });
+      setError(err?.message || "Failed to grant custom graft.");
+    } finally {
+      setGrantingCustomGraft(false);
     }
   }
 
@@ -1628,6 +1798,69 @@ export default function GmPage() {
                     </div>
                   </div>
 
+                  <div className="wt-item">
+                    <div className="wt-kicker">Party Scrap</div>
+                    <div className="wt-itemName">
+                      {typeof selectedGame.scrapAmount === "number" ? selectedGame.scrapAmount : 0}/{SCRAP_MAX}
+                    </div>
+                    <div className="wt-muted" style={{ fontSize: 12, marginBottom: 8 }}>
+                      Shared party resource. Visible to every joined player.
+                    </div>
+
+                    <div className="wt-chipRow">
+                      <button
+                        type="button"
+                        className="wt-btn wt-btnSmall"
+                        onClick={() =>
+                          adjustPartyScrap(
+                            (typeof selectedGame.scrapAmount === "number" ? selectedGame.scrapAmount : 0) - 1
+                          )
+                        }
+                        disabled={scrapBusy}
+                      >
+                        -1
+                      </button>
+                      <button
+                        type="button"
+                        className="wt-btn wt-btnSmall"
+                        onClick={() =>
+                          adjustPartyScrap(
+                            (typeof selectedGame.scrapAmount === "number" ? selectedGame.scrapAmount : 0) + 1
+                          )
+                        }
+                        disabled={scrapBusy}
+                      >
+                        +1
+                      </button>
+                      <input
+                        type="number"
+                        min={0}
+                        max={SCRAP_MAX}
+                        value={
+                          scrapInput ||
+                          String(typeof selectedGame.scrapAmount === "number" ? selectedGame.scrapAmount : 0)
+                        }
+                        onChange={(e) => setScrapInput(e.target.value)}
+                        className="wt-input"
+                        style={{ width: 90 }}
+                      />
+                      <button
+                        type="button"
+                        className="wt-btn wt-btnPrimary wt-btnSmall"
+                        onClick={() => {
+                          setExactPartyScrap(
+                            scrapInput ||
+                              String(typeof selectedGame.scrapAmount === "number" ? selectedGame.scrapAmount : 0)
+                          );
+                          setScrapInput("");
+                        }}
+                        disabled={scrapBusy}
+                      >
+                        Set Scrap
+                      </button>
+                    </div>
+                  </div>
+
                   <div className="wt-chipRow">
                     <button type="button" className="wt-btn wt-btnSmall" onClick={expandAll}>
                       Expand All
@@ -1688,6 +1921,95 @@ export default function GmPage() {
                       value={graftSearch}
                       onChange={(e) => setGraftSearch(e.target.value)}
                     />
+                  </div>
+
+                  <div className="wt-item" style={{ display: "grid", gap: 10 }}>
+                    <div className="wt-kicker">Custom Graft</div>
+                    <div className="wt-muted" style={{ fontSize: 12 }}>
+                      Not from the catalog? Build one and grant it directly to the Target Player above — it
+                      installs immediately.
+                    </div>
+                    <input
+                      type="text"
+                      className="wt-input"
+                      placeholder="Graft name"
+                      value={customGraftForm.name}
+                      onChange={(e) => setCustomGraftForm((prev) => ({ ...prev, name: e.target.value }))}
+                    />
+                    <input
+                      type="text"
+                      className="wt-input"
+                      placeholder="Source enemy (optional)"
+                      value={customGraftForm.sourceEnemy}
+                      onChange={(e) => setCustomGraftForm((prev) => ({ ...prev, sourceEnemy: e.target.value }))}
+                    />
+                    <input
+                      type="text"
+                      className="wt-input"
+                      placeholder="Ability text"
+                      value={customGraftForm.ability}
+                      onChange={(e) => setCustomGraftForm((prev) => ({ ...prev, ability: e.target.value }))}
+                    />
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "repeat(5, minmax(0, 1fr))",
+                        gap: 8,
+                      }}
+                    >
+                      {(["ATT", "TEC", "CHA", "DEF", "HEA"] as const).map((key) => (
+                        <input
+                          key={key}
+                          type="number"
+                          className="wt-input"
+                          placeholder={key}
+                          value={customGraftForm[key]}
+                          onChange={(e) => setCustomGraftForm((prev) => ({ ...prev, [key]: e.target.value }))}
+                        />
+                      ))}
+                    </div>
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+                        gap: 8,
+                      }}
+                    >
+                      <input
+                        type="number"
+                        min={0}
+                        className="wt-input"
+                        placeholder="Mutation Cost"
+                        value={customGraftForm.mutationCost}
+                        onChange={(e) =>
+                          setCustomGraftForm((prev) => ({ ...prev, mutationCost: e.target.value }))
+                        }
+                      />
+                      <input
+                        type="number"
+                        min={0}
+                        className="wt-input"
+                        placeholder="Humanity Loss"
+                        value={customGraftForm.humanityLoss}
+                        onChange={(e) =>
+                          setCustomGraftForm((prev) => ({ ...prev, humanityLoss: e.target.value }))
+                        }
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      className="wt-btn wt-btnPrimary wt-btnSmall"
+                      style={{ width: "fit-content" }}
+                      onClick={() => selectedCharacterId && grantCustomGraftToCharacter(selectedCharacterId)}
+                      disabled={!selectedCharacterId || grantingCustomGraft}
+                    >
+                      {grantingCustomGraft ? "Granting..." : "Grant Custom Graft"}
+                    </button>
+                    {customGraftMessage ? (
+                      <div className="wt-muted" style={{ fontSize: 12 }}>
+                        {customGraftMessage}
+                      </div>
+                    ) : null}
                   </div>
 
                   {selectedCharacter ? (
@@ -2178,6 +2500,63 @@ export default function GmPage() {
                             </button>
                           </div>
                         </div>
+
+                        {character.classId === SOUL_SLINGER_CLASS_ID ? (
+                          <div className="wt-item">
+                            <div className="wt-itemTop">
+                              <div>
+                                <div className="wt-kicker">Soul Charges</div>
+                                <div className="wt-itemName">
+                                  {typeof character.soulCharges === "number"
+                                    ? character.soulCharges
+                                    : SOUL_CHARGE_MAX}
+                                  /{SOUL_CHARGE_MAX}
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="wt-chipRow" style={{ marginTop: 10 }}>
+                              <button
+                                type="button"
+                                className="wt-btn wt-btnSmall"
+                                onClick={() =>
+                                  adjustSoulCharges(
+                                    character.id,
+                                    (typeof character.soulCharges === "number"
+                                      ? character.soulCharges
+                                      : SOUL_CHARGE_MAX) - 1
+                                  )
+                                }
+                                disabled={soulChargeBusyId === character.id}
+                              >
+                                -1
+                              </button>
+                              <button
+                                type="button"
+                                className="wt-btn wt-btnSmall"
+                                onClick={() =>
+                                  adjustSoulCharges(
+                                    character.id,
+                                    (typeof character.soulCharges === "number"
+                                      ? character.soulCharges
+                                      : SOUL_CHARGE_MAX) + 1
+                                  )
+                                }
+                                disabled={soulChargeBusyId === character.id}
+                              >
+                                +1
+                              </button>
+                              <button
+                                type="button"
+                                className="wt-btn wt-btnPrimary wt-btnSmall"
+                                onClick={() => adjustSoulCharges(character.id, SOUL_CHARGE_MAX)}
+                                disabled={soulChargeBusyId === character.id}
+                              >
+                                Full Recharge
+                              </button>
+                            </div>
+                          </div>
+                        ) : null}
 
                         <div style={{ display: "grid", gap: 10 }}>
                           <div>

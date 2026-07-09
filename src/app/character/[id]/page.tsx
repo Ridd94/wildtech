@@ -6,7 +6,6 @@ import { useParams, useRouter } from "next/navigation";
 import {
   collection,
   doc,
-  getDoc,
   getDocs,
   onSnapshot,
   query,
@@ -38,6 +37,7 @@ type GameDoc = {
   status: "open" | "closed";
   createdAt?: any;
   updatedAt?: any;
+  scrapAmount?: number;
 };
 
 type CharacterDoc = {
@@ -57,6 +57,7 @@ type CharacterDoc = {
   grafts?: CharacterGraft[];
   availableGraftIds?: string[];
   knownBlueprintIds?: string[];
+  soulCharges?: number;
   currentHp?: number;
   maxHp?: number;
   createdAt?: any;
@@ -81,6 +82,9 @@ type ItemResolved = {
 };
 
 const EQUIP_LIMIT = 4;
+const SOUL_SLINGER_CLASS_ID = "soul-slinger";
+const SOUL_CHARGE_MAX = 5;
+const SCRAP_MAX = 20;
 
 function clamp(n: number, min: number, max: number) {
   return Math.max(min, Math.min(max, n));
@@ -301,6 +305,7 @@ export default function CharacterSheetPage() {
   const [gameCodeInput, setGameCodeInput] = useState("");
   const [joiningGame, setJoiningGame] = useState(false);
   const [activeGameCode, setActiveGameCode] = useState<string>("");
+  const [activeGameScrap, setActiveGameScrap] = useState<number>(0);
 
   const fallbackMap = useMemo(() => {
     const m: Record<string, ItemResolved> = {};
@@ -395,32 +400,31 @@ export default function CharacterSheetPage() {
   }, [id]);
 
   useEffect(() => {
-    let cancelled = false;
-
-    async function loadGameCode() {
-      if (!character?.activeGameId) {
-        setActiveGameCode("");
-        return;
-      }
-
-      try {
-        const gameSnap = await getDoc(doc(db, "games", character.activeGameId));
-        if (!cancelled && gameSnap.exists()) {
-          const data = gameSnap.data() as GameDoc;
-          setActiveGameCode(data.code || "");
-        }
-      } catch {
-        if (!cancelled) {
-          setActiveGameCode("");
-        }
-      }
+    if (!character?.activeGameId) {
+      setActiveGameCode("");
+      setActiveGameScrap(0);
+      return;
     }
 
-    loadGameCode();
+    const unsubscribe = onSnapshot(
+      doc(db, "games", character.activeGameId),
+      (gameSnap) => {
+        if (!gameSnap.exists()) {
+          setActiveGameCode("");
+          setActiveGameScrap(0);
+          return;
+        }
+        const data = gameSnap.data() as GameDoc;
+        setActiveGameCode(data.code || "");
+        setActiveGameScrap(typeof data.scrapAmount === "number" ? data.scrapAmount : 0);
+      },
+      () => {
+        setActiveGameCode("");
+        setActiveGameScrap(0);
+      }
+    );
 
-    return () => {
-      cancelled = true;
-    };
+    return () => unsubscribe();
   }, [character?.activeGameId]);
 
   function resolveFromModule(itemId: string): ItemResolved | null {
@@ -702,6 +706,8 @@ export default function CharacterSheetPage() {
 
   const mutationLevel = character?.mutationLevel ?? 0;
   const humanity = character?.humanity ?? 10;
+  const isSoulSlinger = character?.classId === SOUL_SLINGER_CLASS_ID;
+  const soulCharges = typeof character?.soulCharges === "number" ? character.soulCharges : SOUL_CHARGE_MAX;
 
   const heroSubtitle = [
     character?.raceName || null,
@@ -862,7 +868,7 @@ export default function CharacterSheetPage() {
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+            gridTemplateColumns: `repeat(${isSoulSlinger ? 4 : 3}, minmax(0, 1fr))`,
             gap: 14,
           }}
         >
@@ -887,6 +893,15 @@ export default function CharacterSheetPage() {
             fill="linear-gradient(90deg, #38bdf8, #0ea5e9)"
             meta={`Installed grafts currently cost ${totalHumanityLossFromGrafts} Humanity.`}
           />
+          {isSoulSlinger ? (
+            <Meter
+              label="Soul Charges"
+              value={soulCharges}
+              max={SOUL_CHARGE_MAX}
+              fill="linear-gradient(90deg, #f472b6, #db2777)"
+              meta="Spent on Spirit-Lead and other Soul-Slinger abilities. Your GM tracks this."
+            />
+          ) : null}
         </div>
       </section>
 
@@ -991,6 +1006,11 @@ export default function CharacterSheetPage() {
                     <div className="wt-muted" style={{ fontSize: 12 }}>
                       Game ID: {character.activeGameId || "None"}
                     </div>
+                    {character.activeGameId ? (
+                      <div className="wt-muted" style={{ fontSize: 12 }}>
+                        Party Scrap: {activeGameScrap}/{SCRAP_MAX}
+                      </div>
+                    ) : null}
                   </div>
                   <span className="wt-tag">{character.activeGameId ? "Live Session" : "Idle"}</span>
                 </div>
@@ -1385,6 +1405,10 @@ export default function CharacterSheetPage() {
           }
 
           div[style*="grid-template-columns: repeat(3, minmax(0, 1fr))"] {
+            grid-template-columns: 1fr !important;
+          }
+
+          div[style*="grid-template-columns: repeat(4, minmax(0, 1fr))"] {
             grid-template-columns: 1fr !important;
           }
 

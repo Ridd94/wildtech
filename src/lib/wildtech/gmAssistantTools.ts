@@ -21,17 +21,28 @@ type ItemResolved = {
 export type JoinedCharacter = {
   id: string;
   name: string;
+  classId?: string;
   className?: string;
   equipment?: string[];
   customItems?: ItemResolved[];
   grafts?: CharacterGraft[];
   availableGraftIds?: string[];
   knownBlueprintIds?: string[];
+  soulCharges?: number;
   currentHp?: number;
   maxHp?: number;
   mutationLevel?: number;
   humanity?: number;
 };
+
+export type GameContext = {
+  id: string;
+  scrapAmount: number;
+};
+
+const SOUL_SLINGER_CLASS_ID = "soul-slinger";
+const SOUL_CHARGE_MAX = 5;
+const SCRAP_MAX = 20;
 
 function clamp(n: number, min: number, max: number) {
   return Math.max(min, Math.min(max, n));
@@ -157,6 +168,58 @@ export const GM_ASSISTANT_TOOLS = [
       required: ["blueprintId"],
     },
   },
+  {
+    name: "add_custom_graft",
+    description:
+      "Grant a character a brand-new custom graft that isn't in the graft catalog. Installs immediately (adds to their installed grafts, raises Mutation, lowers Humanity) — there is no separate unlock step for custom grafts.",
+    input_schema: {
+      type: "object",
+      properties: {
+        characterId: { type: "string" },
+        name: { type: "string" },
+        sourceEnemy: { type: "string", description: "Optional flavor text for where the graft came from." },
+        ability: { type: "string", description: "What the graft does." },
+        statBoost: {
+          type: "object",
+          description: 'Optional stat modifiers, e.g. {"ATT": 1, "DEF": 2}.',
+          properties: {
+            ATT: { type: "number" },
+            TEC: { type: "number" },
+            CHA: { type: "number" },
+            DEF: { type: "number" },
+            HEA: { type: "number" },
+          },
+        },
+        mutationCost: { type: "number", description: "Mutation Level increase from installing this graft." },
+        humanityLoss: { type: "number", description: "Humanity decrease from installing this graft." },
+      },
+      required: ["characterId", "name"],
+    },
+  },
+  {
+    name: "set_soul_charges",
+    description:
+      `Set a Soul-Slinger character's current Soul Charges (clamped between 0 and ${SOUL_CHARGE_MAX}). Only meaningful for characters with the Soul-Slinger class.`,
+    input_schema: {
+      type: "object",
+      properties: {
+        characterId: { type: "string" },
+        soulCharges: { type: "number" },
+      },
+      required: ["characterId", "soulCharges"],
+    },
+  },
+  {
+    name: "adjust_party_scrap",
+    description: `Set the party's shared Scrap amount for this session (clamped between 0 and ${SCRAP_MAX}). Applies to the whole party, not one character.`,
+    input_schema: {
+      type: "object",
+      properties: {
+        scrapAmount: { type: "number" },
+      },
+      required: ["scrapAmount"],
+    },
+  },
 ] as const;
 
 type ToolExecutionResult = { summary: string } | { error: string };
@@ -165,8 +228,21 @@ export async function executeGmAssistantTool(
   db: Firestore,
   roster: JoinedCharacter[],
   toolName: string,
-  input: any
+  input: any,
+  gameContext?: GameContext
 ): Promise<ToolExecutionResult> {
+  if (toolName === "adjust_party_scrap") {
+    if (!gameContext) return { error: "No active game to apply this to." };
+    const clamped = clamp(Number(input?.scrapAmount), 0, SCRAP_MAX);
+    if (!Number.isFinite(clamped)) return { error: "scrapAmount must be a number." };
+    await db.collection("games").doc(gameContext.id).update({
+      scrapAmount: clamped,
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+    gameContext.scrapAmount = clamped;
+    return { summary: `Set party Scrap to ${clamped}/${SCRAP_MAX}.` };
+  }
+
   if (toolName === "reveal_blueprint_to_party") {
     const blueprint = getBlueprint(String(input?.blueprintId));
     if (!blueprint) return { error: "Unknown blueprint ID." };
@@ -291,6 +367,52 @@ export async function executeGmAssistantTool(
       });
       target.availableGraftIds = nextUnlocked;
       return { summary: `Unlocked ${graft.name} for ${target.name}.` };
+    }
+
+    case "add_custom_graft": {
+      const name = String(input.name || "").trim();
+      if (!name) return { error: "Graft name is required." };
+      const rawBoost = input.statBoost || {};
+      const statBoost: StatMods = {};
+      (["ATT", "TEC", "CHA", "DEF", "HEA"] as const).forEach((key) => {
+        const val = Number(rawBoost[key]);
+        if (Number.isFinite(val) && val !== 0) statBoost[key] = val;
+      });
+      const mutationCost = Number(input.mutationCost) || 0;
+      const humanityLoss = Number(input.humanityLoss) || 0;
+      const newGraft: CharacterGraft = {
+        id: `custom-graft-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+        name,
+        sourceEnemy: input.sourceEnemy ? String(input.sourceEnemy).trim() : "GM Custom",
+        ability: input.ability ? String(input.ability).trim() : "No ability text provided.",
+        statBoost,
+        mutationCost,
+        humanityLoss,
+      };
+      const nextGrafts = [...(Array.isArray(target.grafts) ? target.grafts : []), newGraft];
+      const nextMutation = (target.mutationLevel ?? 0) + mutationCost;
+      const nextHumanity = Math.max(0, (target.humanity ?? 10) - humanityLoss);
+      await ref.update({
+        grafts: nextGrafts,
+        mutationLevel: nextMutation,
+        humanity: nextHumanity,
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+      target.grafts = nextGrafts;
+      target.mutationLevel = nextMutation;
+      target.humanity = nextHumanity;
+      return { summary: `Granted the custom graft "${name}" to ${target.name}.` };
+    }
+
+    case "set_soul_charges": {
+      const clamped = clamp(Number(input.soulCharges), 0, SOUL_CHARGE_MAX);
+      if (!Number.isFinite(clamped)) return { error: "soulCharges must be a number." };
+      if (target.classId !== SOUL_SLINGER_CLASS_ID) {
+        return { error: `${target.name} isn't a Soul-Slinger, so they don't have Soul Charges.` };
+      }
+      await ref.update({ soulCharges: clamped, updatedAt: FieldValue.serverTimestamp() });
+      target.soulCharges = clamped;
+      return { summary: `Set ${target.name}'s Soul Charges to ${clamped}/${SOUL_CHARGE_MAX}.` };
     }
 
     default:
