@@ -22,6 +22,7 @@ import {
   getTotalMutationFromGrafts,
 } from "@/lib/wildtech/grafts";
 import { getBlueprint } from "@/lib/wildtech/blueprints";
+import type { ItemUseEffect } from "@/lib/game/items";
 
 type StatMods = {
   ATT?: number;
@@ -38,6 +39,14 @@ type GameDoc = {
   createdAt?: any;
   updatedAt?: any;
   scrapAmount?: number;
+};
+
+type PendingItemUse = {
+  itemId: string;
+  itemName: string;
+  effectType: "heal" | "narrative";
+  amount?: number;
+  requestedAt?: any;
 };
 
 type CharacterDoc = {
@@ -58,6 +67,8 @@ type CharacterDoc = {
   availableGraftIds?: string[];
   knownBlueprintIds?: string[];
   soulCharges?: number;
+  pendingItemUse?: PendingItemUse | null;
+  lastItemUseNotice?: string | null;
   currentHp?: number;
   maxHp?: number;
   createdAt?: any;
@@ -79,6 +90,8 @@ type ItemResolved = {
   description?: string;
   tags?: string[];
   mods?: StatMods;
+  usable?: boolean;
+  useEffect?: ItemUseEffect;
 };
 
 const EQUIP_LIMIT = 4;
@@ -449,6 +462,8 @@ export default function CharacterSheetPage() {
         description: it.description || it.desc || "",
         tags: it.tags || [],
         mods: it.statMods || it.mods || it.bonus || {},
+        usable: !!it.usable,
+        useEffect: it.useEffect,
       };
     }
 
@@ -470,6 +485,8 @@ export default function CharacterSheetPage() {
           description: found.description || found.desc || "",
           tags: found.tags || [],
           mods: found.statMods || found.mods || found.bonus || {},
+          usable: !!found.usable,
+          useEffect: found.useEffect,
         };
       }
     }
@@ -567,6 +584,25 @@ export default function CharacterSheetPage() {
     const current = character.equipment ?? [];
     if (!current.includes(itemId)) return;
     await persistEquipment(current.filter((x) => x !== itemId));
+  }
+
+  async function requestItemUse(item: ItemResolved) {
+    if (!character || character.pendingItemUse) return;
+
+    await persistCharacterPatch({
+      pendingItemUse: {
+        itemId: item.id,
+        itemName: item.name,
+        effectType: item.useEffect?.type ?? "narrative",
+        amount: item.useEffect?.type === "heal" ? item.useEffect.amount : null,
+        requestedAt: serverTimestamp(),
+      },
+      lastItemUseNotice: null,
+    });
+  }
+
+  async function dismissItemUseNotice() {
+    await persistCharacterPatch({ lastItemUseNotice: null });
   }
 
   async function onApplyGraft(graftId: string) {
@@ -1207,6 +1243,23 @@ export default function CharacterSheetPage() {
             sub="Gear your GM has given you. New items appear here automatically."
             badge={`${equippedIds.length}/${EQUIP_LIMIT}`}
           >
+            {character.pendingItemUse ? (
+              <div className="wt-item" style={{ marginBottom: 10 }}>
+                <div className="wt-muted" style={{ fontSize: 12 }}>
+                  Waiting for your GM to approve using <strong style={{ color: "var(--wt-text)" }}>{character.pendingItemUse.itemName}</strong>...
+                </div>
+              </div>
+            ) : character.lastItemUseNotice ? (
+              <div className="wt-item" style={{ marginBottom: 10 }}>
+                <div className="wt-itemTop">
+                  <div className="wt-muted" style={{ fontSize: 12 }}>{character.lastItemUseNotice}</div>
+                  <button className="wt-btn wt-btnSmall" onClick={dismissItemUseNotice}>
+                    Dismiss
+                  </button>
+                </div>
+              </div>
+            ) : null}
+
             <div className="wt-scrollPanel" style={{ display: "grid", gap: 10, maxHeight: 520 }}>
               {equippedItems.length === 0 ? (
                 <div className="wt-item">
@@ -1232,12 +1285,26 @@ export default function CharacterSheetPage() {
                               {chip}
                             </span>
                           ))}
+                          {it.usable && it.useEffect?.type === "heal" ? (
+                            <span className="wt-chip">Heals {it.useEffect.amount} HP on use</span>
+                          ) : null}
                         </div>
                       </div>
 
-                      <button className="wt-btn wt-btnSmall" onClick={() => onUnequip(it.id)}>
-                        Unequip
-                      </button>
+                      <div style={{ display: "flex", gap: 8 }}>
+                        {it.usable ? (
+                          <button
+                            className="wt-btn wt-btnPrimary wt-btnSmall"
+                            onClick={() => requestItemUse(it)}
+                            disabled={!!character.pendingItemUse}
+                          >
+                            Use
+                          </button>
+                        ) : null}
+                        <button className="wt-btn wt-btnSmall" onClick={() => onUnequip(it.id)}>
+                          Unequip
+                        </button>
+                      </div>
                     </div>
                   </div>
                 ))

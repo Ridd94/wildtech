@@ -4,12 +4,16 @@ export type StatKey = "ATT" | "TEC" | "CHA" | "DEF" | "HEA";
 
 export type StatMods = Partial<Record<StatKey, number>>;
 
+export type ItemUseEffect = { type: "heal"; amount: number } | { type: "narrative" };
+
 export type Item = {
   id: string;
   name: string;
   description: string;
   category?: string;
   statMods?: StatMods;
+  usable?: boolean;
+  useEffect?: ItemUseEffect;
 };
 
 export const ITEMS: Record<string, Item> = {
@@ -283,6 +287,8 @@ export const ITEMS: Record<string, Item> = {
     description: "Emergency regeneration gel patch. Burns like static.",
     category: "Medical",
     statMods: { HEA: 1 },
+    usable: true,
+    useEffect: { type: "heal", amount: 10 },
   },
   trauma_kit: {
     id: "trauma_kit",
@@ -290,6 +296,8 @@ export const ITEMS: Record<string, Item> = {
     description: "A field trauma kit stocked with clotting foam and quick sutures.",
     category: "Medical",
     statMods: { HEA: 2 },
+    usable: true,
+    useEffect: { type: "heal", amount: 20 },
   },
   combat_stim: {
     id: "combat_stim",
@@ -297,6 +305,8 @@ export const ITEMS: Record<string, Item> = {
     description: "A sharp adrenaline stim that dulls pain and sharpens aggression, briefly.",
     category: "Medical",
     statMods: { ATT: 1, HEA: 1 },
+    usable: true,
+    useEffect: { type: "heal", amount: 10 },
   },
   nano_injector: {
     id: "nano_injector",
@@ -304,6 +314,8 @@ export const ITEMS: Record<string, Item> = {
     description: "A syringe of medical nanites that knit tissue and interface with cybernetics.",
     category: "Medical",
     statMods: { TEC: 1, HEA: 2 },
+    usable: true,
+    useEffect: { type: "heal", amount: 20 },
   },
   regen_injector: {
     id: "regen_injector",
@@ -311,6 +323,8 @@ export const ITEMS: Record<string, Item> = {
     description: "A heavy-duty regenerative injector reserved for the worst wounds.",
     category: "Medical",
     statMods: { HEA: 3 },
+    usable: true,
+    useEffect: { type: "heal", amount: 30 },
   },
   field_bandage: {
     id: "field_bandage",
@@ -318,6 +332,8 @@ export const ITEMS: Record<string, Item> = {
     description: "A quick wrap-and-go dressing for shallow wounds. Cheap, fast, always in the bag.",
     category: "Medical",
     statMods: { HEA: 1 },
+    usable: true,
+    useEffect: { type: "heal", amount: 10 },
   },
   antitox_vial: {
     id: "antitox_vial",
@@ -325,6 +341,8 @@ export const ITEMS: Record<string, Item> = {
     description: "Neutralizes common street toxins and settles the shakes that follow.",
     category: "Medical",
     statMods: { HEA: 1, TEC: 1 },
+    usable: true,
+    useEffect: { type: "heal", amount: 10 },
   },
   adrenal_booster: {
     id: "adrenal_booster",
@@ -332,6 +350,8 @@ export const ITEMS: Record<string, Item> = {
     description: "A jolt of synthetic adrenaline that dulls pain and keeps you moving.",
     category: "Medical",
     statMods: { ATT: 1, HEA: 1 },
+    usable: true,
+    useEffect: { type: "heal", amount: 10 },
   },
 
   // Utilities
@@ -420,6 +440,8 @@ export const ITEMS: Record<string, Item> = {
     description: "A taut wire rigged to a small charge. Ugly surprise for anyone in a hurry.",
     category: "Traps",
     statMods: { ATT: 2 },
+    usable: true,
+    useEffect: { type: "narrative" },
   },
   snare_net_trap: {
     id: "snare_net_trap",
@@ -427,6 +449,8 @@ export const ITEMS: Record<string, Item> = {
     description: "Springs a weighted net over anything that trips it, buying you time to close the gap.",
     category: "Traps",
     statMods: { DEF: 1, TEC: 1 },
+    usable: true,
+    useEffect: { type: "narrative" },
   },
   spike_plate: {
     id: "spike_plate",
@@ -434,6 +458,8 @@ export const ITEMS: Record<string, Item> = {
     description: "A pressure plate lined with scavenged rebar spikes. Low-tech and reliable.",
     category: "Traps",
     statMods: { DEF: 1 },
+    usable: true,
+    useEffect: { type: "narrative" },
   },
   gas_vent_trap: {
     id: "gas_vent_trap",
@@ -441,6 +467,8 @@ export const ITEMS: Record<string, Item> = {
     description: "Releases a choking cloud when disturbed, covering a retreat or softening an ambush.",
     category: "Traps",
     statMods: { ATT: 1, TEC: 1 },
+    usable: true,
+    useEffect: { type: "narrative" },
   },
   proximity_stunner: {
     id: "proximity_stunner",
@@ -448,6 +476,8 @@ export const ITEMS: Record<string, Item> = {
     description: "A short-range device that scrambles nerves and locks up muscles for anyone who wanders close.",
     category: "Traps",
     statMods: { TEC: 2 },
+    usable: true,
+    useEffect: { type: "narrative" },
   },
 };
 

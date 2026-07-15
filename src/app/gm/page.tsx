@@ -61,6 +61,14 @@ type GameDoc = {
   scrapAmount?: number;
 };
 
+type PendingItemUse = {
+  itemId: string;
+  itemName: string;
+  effectType: "heal" | "narrative";
+  amount?: number | null;
+  requestedAt?: any;
+};
+
 type CharacterDoc = {
   ownerId: string;
   name: string;
@@ -78,6 +86,8 @@ type CharacterDoc = {
   availableGraftIds?: string[];
   knownBlueprintIds?: string[];
   soulCharges?: number;
+  pendingItemUse?: PendingItemUse | null;
+  lastItemUseNotice?: string | null;
   activeGameId: string | null;
   currentHp?: number;
   maxHp?: number;
@@ -260,6 +270,7 @@ export default function GmPage() {
   const [scrapInput, setScrapInput] = useState("");
   const [startingKitBusy, setStartingKitBusy] = useState(false);
   const [startingKitMessage, setStartingKitMessage] = useState("");
+  const [itemUseBusyId, setItemUseBusyId] = useState("");
 
   const firebaseProjectId =
     process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || "missing-project-id";
@@ -654,6 +665,11 @@ export default function GmPage() {
       return known;
     }, new Set<string>());
   }, [joinedCharacters]);
+
+  const pendingItemUseRequests = useMemo(
+    () => joinedCharacters.filter((c) => !!c.pendingItemUse),
+    [joinedCharacters]
+  );
 
   function isBlueprintKnownByWholeParty(blueprintId: string) {
     if (joinedCharacters.length === 0) return false;
@@ -1201,6 +1217,75 @@ export default function GmPage() {
     }
   }
 
+  async function approveItemUse(characterId: string) {
+    const character = joinedCharacters.find((c) => c.id === characterId);
+    const request = character?.pendingItemUse;
+    if (!character || !request) return;
+
+    setItemUseBusyId(characterId);
+    setError("");
+
+    try {
+      const patch: Record<string, any> = {
+        pendingItemUse: null,
+        updatedAt: serverTimestamp(),
+      };
+
+      if (request.effectType === "heal" && typeof request.amount === "number") {
+        const maxHp = typeof character.maxHp === "number" ? character.maxHp : 10;
+        const currentHp = typeof character.currentHp === "number" ? character.currentHp : maxHp;
+        patch.currentHp = clamp(currentHp + request.amount, 0, maxHp);
+        patch.lastItemUseNotice = `Healed ${request.amount} HP from ${request.itemName}.`;
+      } else {
+        patch.lastItemUseNotice = `Used ${request.itemName}. Resolve the effect at the table.`;
+      }
+
+      const current = Array.isArray(character.equipment) ? character.equipment : [];
+      patch.equipment = current.filter((itemId) => itemId !== request.itemId);
+
+      await updateDoc(doc(db, "characters", characterId), patch);
+    } catch (err: any) {
+      console.error("[GM Dashboard] approveItemUse failed", {
+        message: err?.message,
+        code: err?.code,
+        characterId,
+        uid: user?.uid,
+        projectId: firebaseProjectId,
+      });
+      setError(err?.message || "Failed to approve item use.");
+    } finally {
+      setItemUseBusyId("");
+    }
+  }
+
+  async function denyItemUse(characterId: string) {
+    const character = joinedCharacters.find((c) => c.id === characterId);
+    const request = character?.pendingItemUse;
+    if (!character || !request) return;
+
+    setItemUseBusyId(characterId);
+    setError("");
+
+    try {
+      await updateDoc(doc(db, "characters", characterId), {
+        pendingItemUse: null,
+        lastItemUseNotice: `Your GM denied using ${request.itemName}.`,
+        updatedAt: serverTimestamp(),
+      });
+    } catch (err: any) {
+      console.error("[GM Dashboard] denyItemUse failed", {
+        message: err?.message,
+        code: err?.code,
+        characterId,
+        uid: user?.uid,
+        projectId: firebaseProjectId,
+      });
+      setError(err?.message || "Failed to deny item use.");
+    } finally {
+      setItemUseBusyId("");
+    }
+  }
+
   function makeCustomItemId() {
     return `custom-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
   }
@@ -1580,6 +1665,59 @@ export default function GmPage() {
         }}
       >
         <div style={{ display: "grid", gap: 18 }}>
+          {pendingItemUseRequests.length > 0 ? (
+            <section className="wt-card" style={{ borderColor: "rgba(234,179,8,0.45)" }}>
+              <div className="wt-cardHeader">
+                <div className="wt-cardTitle">Item Use Requests</div>
+                <div className="wt-cardSub">
+                  Players are waiting for you to confirm before using these items.
+                </div>
+              </div>
+
+              <div className="wt-cardBody" style={{ display: "grid", gap: 10 }}>
+                {pendingItemUseRequests.map((character) => {
+                  const request = character.pendingItemUse!;
+                  return (
+                    <div key={character.id} className="wt-item">
+                      <div className="wt-itemTop">
+                        <div>
+                          <div className="wt-itemName">
+                            {character.name} wants to use {request.itemName}
+                          </div>
+                          <div className="wt-muted" style={{ fontSize: 12 }}>
+                            {request.effectType === "heal"
+                              ? `Would heal ${request.amount ?? 0} HP and consume the item.`
+                              : "Narrative use — resolve the effect at the table. Consumes the item."}
+                          </div>
+                        </div>
+                        <span className="wt-tag">Pending</span>
+                      </div>
+
+                      <div className="wt-chipRow" style={{ marginTop: 10 }}>
+                        <button
+                          type="button"
+                          className="wt-btn wt-btnPrimary wt-btnSmall"
+                          onClick={() => approveItemUse(character.id)}
+                          disabled={itemUseBusyId === character.id}
+                        >
+                          {itemUseBusyId === character.id ? "Working..." : "Approve"}
+                        </button>
+                        <button
+                          type="button"
+                          className="wt-btn wt-btnSmall"
+                          onClick={() => denyItemUse(character.id)}
+                          disabled={itemUseBusyId === character.id}
+                        >
+                          Deny
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+          ) : null}
+
           <section className="wt-card">
             <div className="wt-cardHeader">
               <div className="wt-cardTitle">GM Assistant</div>

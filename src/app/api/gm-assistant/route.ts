@@ -81,11 +81,14 @@ export async function POST(req: Request) {
       const unlocked = (c.availableGraftIds ?? []).join(", ") || "none";
       const knownBlueprints = (c.knownBlueprintIds ?? []).join(", ") || "none";
       const soulCharges = c.classId === "soul-slinger" ? `${c.soulCharges ?? 5}/5` : "n/a (not a Soul-Slinger)";
+      const pendingUse = c.pendingItemUse
+        ? `WAITING FOR APPROVAL: wants to use "${c.pendingItemUse.itemName}"`
+        : "none";
       return `- id: ${c.id} | name: ${c.name} | class: ${c.className ?? "unknown"} (classId: ${
         c.classId ?? "unknown"
       }) | HP: ${c.currentHp ?? 10}/${
         c.maxHp ?? 10
-      } | mutation: ${c.mutationLevel ?? 0} | humanity: ${c.humanity ?? 10} | soul charges: ${soulCharges} | equipment: ${equipment} | installed grafts: ${grafts} | unlocked graft ids: ${unlocked} | known blueprint ids: ${knownBlueprints}`;
+      } | mutation: ${c.mutationLevel ?? 0} | humanity: ${c.humanity ?? 10} | soul charges: ${soulCharges} | equipment: ${equipment} | installed grafts: ${grafts} | unlocked graft ids: ${unlocked} | known blueprint ids: ${knownBlueprints} | pending item use: ${pendingUse}`;
     })
     .join("\n");
 
@@ -107,7 +110,9 @@ Use the provided tools to carry out requests to change a player's health, items,
 
 Blueprints represent schematics the party has found. To reveal one, use "reveal_blueprint_to_party" with a blueprintId built from the graft or item catalogs above: "graft-<graftId>" for a graft blueprint (e.g. "graft-cybernetic-laser-eye") or "item-<itemId>" for an item blueprint (e.g. "item-gauss_rifle"). This always applies to every joined player at once, not a single character.
 
-Use "add_custom_graft" when a GM describes a graft that isn't in the catalog above — it installs immediately on the target character, same as a real graft. Use "set_soul_charges" only for Soul-Slinger characters (check the "class" / "classId" field on the roster above first); it fails harmlessly if used on a non-Soul-Slinger. Use "adjust_party_scrap" for requests about the party's shared Scrap pool (0-20) — it always sets the absolute value, so compute the new total yourself from the current Party Scrap value above when the request is a relative change (e.g. "give the party 5 scrap"). Use "give_starter_kit_to_party" when a GM wants to re-equip or gear up everyone at once (e.g. "give everyone a basic kit") — it gives a knife, jacket, and med patch to every joined character who doesn't already have them.`;
+Use "add_custom_graft" when a GM describes a graft that isn't in the catalog above — it installs immediately on the target character, same as a real graft. Use "set_soul_charges" only for Soul-Slinger characters (check the "class" / "classId" field on the roster above first); it fails harmlessly if used on a non-Soul-Slinger. Use "adjust_party_scrap" for requests about the party's shared Scrap pool (0-20) — it always sets the absolute value, so compute the new total yourself from the current Party Scrap value above when the request is a relative change (e.g. "give the party 5 scrap"). Use "give_starter_kit_to_party" when a GM wants to re-equip or gear up everyone at once (e.g. "give everyone a basic kit") — it gives a knife, jacket, and med patch to every joined character who doesn't already have them.
+
+Some items (mostly Medical and Traps) are usable — a player can request to use one from their sheet, which shows as "pending item use" on the roster above until the GM confirms. Use "approve_item_use" or "deny_item_use" with that character's id when a GM responds to a pending request (e.g. "let Jax use it" or "deny that"). Approving a healing item heals the stated amount and removes the item; approving a narrative item (like a trap) just removes it and leaves the effect to be resolved at the table. Don't call these for a character with no pending request.`;
 
   const messages: Anthropic.MessageParam[] = [
     ...history.map((turn) => ({ role: turn.role, content: turn.content })),

@@ -18,6 +18,13 @@ type ItemResolved = {
   mods?: StatMods;
 };
 
+type PendingItemUse = {
+  itemId: string;
+  itemName: string;
+  effectType: "heal" | "narrative";
+  amount?: number | null;
+};
+
 export type JoinedCharacter = {
   id: string;
   name: string;
@@ -29,6 +36,7 @@ export type JoinedCharacter = {
   availableGraftIds?: string[];
   knownBlueprintIds?: string[];
   soulCharges?: number;
+  pendingItemUse?: PendingItemUse | null;
   currentHp?: number;
   maxHp?: number;
   mutationLevel?: number;
@@ -228,6 +236,29 @@ export const GM_ASSISTANT_TOOLS = [
     input_schema: {
       type: "object",
       properties: {},
+    },
+  },
+  {
+    name: "approve_item_use",
+    description:
+      "Approve a character's pending request to use an item (check the roster above for who has one). Applies the effect — heals HP for healing items, or just consumes the item for narrative-effect items like traps — and removes the item from their equipment.",
+    input_schema: {
+      type: "object",
+      properties: {
+        characterId: { type: "string" },
+      },
+      required: ["characterId"],
+    },
+  },
+  {
+    name: "deny_item_use",
+    description: "Deny a character's pending request to use an item. The item stays in their equipment, nothing happens.",
+    input_schema: {
+      type: "object",
+      properties: {
+        characterId: { type: "string" },
+      },
+      required: ["characterId"],
     },
   },
 ] as const;
@@ -451,6 +482,49 @@ export async function executeGmAssistantTool(
       await ref.update({ soulCharges: clamped, updatedAt: FieldValue.serverTimestamp() });
       target.soulCharges = clamped;
       return { summary: `Set ${target.name}'s Soul Charges to ${clamped}/${SOUL_CHARGE_MAX}.` };
+    }
+
+    case "approve_item_use": {
+      const request = target.pendingItemUse;
+      if (!request) return { error: `${target.name} has no pending item use request.` };
+
+      const patch: Record<string, any> = {
+        pendingItemUse: null,
+        updatedAt: FieldValue.serverTimestamp(),
+      };
+
+      if (request.effectType === "heal" && typeof request.amount === "number") {
+        const maxHp = typeof target.maxHp === "number" ? target.maxHp : 10;
+        const currentHp = typeof target.currentHp === "number" ? target.currentHp : maxHp;
+        const nextHp = clamp(currentHp + request.amount, 0, maxHp);
+        patch.currentHp = nextHp;
+        patch.lastItemUseNotice = `Healed ${request.amount} HP from ${request.itemName}.`;
+        target.currentHp = nextHp;
+      } else {
+        patch.lastItemUseNotice = `Used ${request.itemName}. Resolve the effect at the table.`;
+      }
+
+      const current = Array.isArray(target.equipment) ? target.equipment : [];
+      const nextEquipment = current.filter((itemId) => itemId !== request.itemId);
+      patch.equipment = nextEquipment;
+
+      await ref.update(patch);
+      target.equipment = nextEquipment;
+      target.pendingItemUse = null;
+      return { summary: `Approved ${target.name}'s use of ${request.itemName}.` };
+    }
+
+    case "deny_item_use": {
+      const request = target.pendingItemUse;
+      if (!request) return { error: `${target.name} has no pending item use request.` };
+
+      await ref.update({
+        pendingItemUse: null,
+        lastItemUseNotice: `Your GM denied using ${request.itemName}.`,
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+      target.pendingItemUse = null;
+      return { summary: `Denied ${target.name}'s use of ${request.itemName}.` };
     }
 
     default:
