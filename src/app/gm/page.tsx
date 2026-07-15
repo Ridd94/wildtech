@@ -88,6 +88,7 @@ type CharacterDoc = {
 const SOUL_SLINGER_CLASS_ID = "soul-slinger";
 const SOUL_CHARGE_MAX = 5;
 const SCRAP_MAX = 20;
+const STARTER_KIT_ITEM_IDS = ["knife", "leather_jacket", "med_patch"];
 
 type JoinedCharacter = CharacterDoc & {
   id: string;
@@ -257,6 +258,8 @@ export default function GmPage() {
   const [soulChargeBusyId, setSoulChargeBusyId] = useState("");
   const [scrapBusy, setScrapBusy] = useState(false);
   const [scrapInput, setScrapInput] = useState("");
+  const [startingKitBusy, setStartingKitBusy] = useState(false);
+  const [startingKitMessage, setStartingKitMessage] = useState("");
 
   const firebaseProjectId =
     process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || "missing-project-id";
@@ -1155,6 +1158,49 @@ export default function GmPage() {
     }
   }
 
+  async function giveStarterKitToParty() {
+    if (joinedCharacters.length === 0) return;
+
+    setStartingKitBusy(true);
+    setError("");
+    setStartingKitMessage("");
+
+    try {
+      const batch = writeBatch(db);
+      let anyChanged = false;
+
+      for (const character of joinedCharacters) {
+        const current = Array.isArray(character.equipment) ? character.equipment : [];
+        const missing = STARTER_KIT_ITEM_IDS.filter((itemId) => !current.includes(itemId));
+        if (missing.length === 0) continue;
+
+        anyChanged = true;
+        batch.update(doc(db, "characters", character.id), {
+          equipment: [...current, ...missing],
+          updatedAt: serverTimestamp(),
+        });
+      }
+
+      if (!anyChanged) {
+        setStartingKitMessage("Everyone already has the starter kit.");
+        return;
+      }
+
+      await batch.commit();
+      setStartingKitMessage(`Gave the starter kit to ${joinedCharacters.length} player(s).`);
+    } catch (err: any) {
+      console.error("[GM Dashboard] giveStarterKitToParty failed", {
+        message: err?.message,
+        code: err?.code,
+        uid: user?.uid,
+        projectId: firebaseProjectId,
+      });
+      setError(err?.message || "Failed to give starter kit.");
+    } finally {
+      setStartingKitBusy(false);
+    }
+  }
+
   function makeCustomItemId() {
     return `custom-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
   }
@@ -1859,6 +1905,27 @@ export default function GmPage() {
                         Set Scrap
                       </button>
                     </div>
+                  </div>
+
+                  <div className="wt-item">
+                    <div className="wt-kicker">Starter Kit</div>
+                    <div className="wt-muted" style={{ fontSize: 12, marginBottom: 8 }}>
+                      Gives every joined player a Gutter Knife, Leather Jacket, and Med Patch (skips anyone
+                      who already has them).
+                    </div>
+                    <button
+                      type="button"
+                      className="wt-btn wt-btnPrimary wt-btnSmall"
+                      onClick={giveStarterKitToParty}
+                      disabled={startingKitBusy || joinedCharacters.length === 0}
+                    >
+                      {startingKitBusy ? "Giving..." : "Give Starter Kit to Party"}
+                    </button>
+                    {startingKitMessage ? (
+                      <div className="wt-muted" style={{ fontSize: 12, marginTop: 8 }}>
+                        {startingKitMessage}
+                      </div>
+                    ) : null}
                   </div>
 
                   <div className="wt-chipRow">

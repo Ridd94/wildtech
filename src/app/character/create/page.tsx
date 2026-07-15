@@ -683,6 +683,7 @@ const LOOT_CATEGORY_TO_SLOT: Record<string, ItemCategory> = {
   armour: "armour",
   medical: "vitality",
   utilities: "utility",
+  traps: "utility",
 };
 
 function inferCategory(raw: any): ItemCategory | null {

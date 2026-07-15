@@ -43,6 +43,7 @@ export type GameContext = {
 const SOUL_SLINGER_CLASS_ID = "soul-slinger";
 const SOUL_CHARGE_MAX = 5;
 const SCRAP_MAX = 20;
+const STARTER_KIT_ITEM_IDS = ["knife", "leather_jacket", "med_patch"];
 
 function clamp(n: number, min: number, max: number) {
   return Math.max(min, Math.min(max, n));
@@ -220,6 +221,15 @@ export const GM_ASSISTANT_TOOLS = [
       required: ["scrapAmount"],
     },
   },
+  {
+    name: "give_starter_kit_to_party",
+    description:
+      "Give every joined character a basic starter kit (a knife, a jacket, and a med patch), skipping anyone who already has those items. Use when a GM asks to re-equip or gear up the whole party from scratch.",
+    input_schema: {
+      type: "object",
+      properties: {},
+    },
+  },
 ] as const;
 
 type ToolExecutionResult = { summary: string } | { error: string };
@@ -241,6 +251,34 @@ export async function executeGmAssistantTool(
     });
     gameContext.scrapAmount = clamped;
     return { summary: `Set party Scrap to ${clamped}/${SCRAP_MAX}.` };
+  }
+
+  if (toolName === "give_starter_kit_to_party") {
+    if (roster.length === 0) return { error: "No players are currently in this session." };
+
+    const batch = db.batch();
+    let anyChanged = false;
+
+    for (const character of roster) {
+      const current = Array.isArray(character.equipment) ? character.equipment : [];
+      const missing = STARTER_KIT_ITEM_IDS.filter((itemId) => !current.includes(itemId));
+      if (missing.length === 0) continue;
+
+      anyChanged = true;
+      const nextEquipment = [...current, ...missing];
+      batch.update(db.collection("characters").doc(character.id), {
+        equipment: nextEquipment,
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+      character.equipment = nextEquipment;
+    }
+
+    if (!anyChanged) {
+      return { error: "Everyone already has the starter kit." };
+    }
+
+    await batch.commit();
+    return { summary: `Gave the starter kit to ${roster.length} player(s).` };
   }
 
   if (toolName === "reveal_blueprint_to_party") {

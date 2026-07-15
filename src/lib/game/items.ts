@@ -312,6 +312,27 @@ export const ITEMS: Record<string, Item> = {
     category: "Medical",
     statMods: { HEA: 3 },
   },
+  field_bandage: {
+    id: "field_bandage",
+    name: "Field Bandage",
+    description: "A quick wrap-and-go dressing for shallow wounds. Cheap, fast, always in the bag.",
+    category: "Medical",
+    statMods: { HEA: 1 },
+  },
+  antitox_vial: {
+    id: "antitox_vial",
+    name: "Antitox Vial",
+    description: "Neutralizes common street toxins and settles the shakes that follow.",
+    category: "Medical",
+    statMods: { HEA: 1, TEC: 1 },
+  },
+  adrenal_booster: {
+    id: "adrenal_booster",
+    name: "Adrenal Booster",
+    description: "A jolt of synthetic adrenaline that dulls pain and keeps you moving.",
+    category: "Medical",
+    statMods: { ATT: 1, HEA: 1 },
+  },
 
   // Utilities
   neon_visor: {
@@ -370,6 +391,64 @@ export const ITEMS: Record<string, Item> = {
     category: "Utilities",
     statMods: { DEF: 1, TEC: 3 },
   },
+  thermal_goggles: {
+    id: "thermal_goggles",
+    name: "Thermal Goggles",
+    description: "Picks out warm bodies through smoke, darkness, and thin cover.",
+    category: "Utilities",
+    statMods: { TEC: 2 },
+  },
+  sonar_pulse_emitter: {
+    id: "sonar_pulse_emitter",
+    name: "Sonar Pulse Emitter",
+    description: "Pings a wide radius and maps out movement through walls and floors.",
+    category: "Utilities",
+    statMods: { TEC: 2 },
+  },
+  trip_sense_anklet: {
+    id: "trip_sense_anklet",
+    name: "Trip-Sense Anklet",
+    description: "Vibrates faintly when something crosses a nearby threshold. Hard to sneak up on you now.",
+    category: "Utilities",
+    statMods: { TEC: 1, DEF: 1 },
+  },
+
+  // Traps
+  tripwire_charge: {
+    id: "tripwire_charge",
+    name: "Tripwire Charge",
+    description: "A taut wire rigged to a small charge. Ugly surprise for anyone in a hurry.",
+    category: "Traps",
+    statMods: { ATT: 2 },
+  },
+  snare_net_trap: {
+    id: "snare_net_trap",
+    name: "Snare Net Trap",
+    description: "Springs a weighted net over anything that trips it, buying you time to close the gap.",
+    category: "Traps",
+    statMods: { DEF: 1, TEC: 1 },
+  },
+  spike_plate: {
+    id: "spike_plate",
+    name: "Spike Plate",
+    description: "A pressure plate lined with scavenged rebar spikes. Low-tech and reliable.",
+    category: "Traps",
+    statMods: { DEF: 1 },
+  },
+  gas_vent_trap: {
+    id: "gas_vent_trap",
+    name: "Gas Vent Trap",
+    description: "Releases a choking cloud when disturbed, covering a retreat or softening an ambush.",
+    category: "Traps",
+    statMods: { ATT: 1, TEC: 1 },
+  },
+  proximity_stunner: {
+    id: "proximity_stunner",
+    name: "Proximity Stunner",
+    description: "A short-range device that scrambles nerves and locks up muscles for anyone who wanders close.",
+    category: "Traps",
+    statMods: { TEC: 2 },
+  },
 };
 
 export const ITEM_CATEGORY_ORDER = [
@@ -382,6 +461,7 @@ export const ITEM_CATEGORY_ORDER = [
   "Armour",
   "Medical",
   "Utilities",
+  "Traps",
 ] as const;
 
 export function getItem(itemId: string): Item | null {
