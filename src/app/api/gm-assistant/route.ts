@@ -18,6 +18,7 @@ const MAX_TOOL_ITERATIONS = 6;
 type ChatTurn = { role: "user" | "assistant"; content: string };
 
 export async function POST(req: Request) {
+  try {
   const authHeader = req.headers.get("authorization") || "";
   const idToken = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
 
@@ -175,4 +176,8 @@ Use "set_sector_status" to mark a sector liberated, destroyed, not_visited, or n
     reply: "That request needed more steps than I'm allowed to take at once — try breaking it into smaller requests.",
     actions,
   });
+  } catch (err: any) {
+    console.error("[gm-assistant] unhandled error", err);
+    return Response.json({ error: err?.message || "Unexpected server error." }, { status: 500 });
+  }
 }
