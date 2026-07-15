@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { doc, onSnapshot } from "firebase/firestore";
+import { doc, onSnapshot, setDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { isGmAllowedEmail } from "@/lib/wildtech/access";
@@ -89,28 +89,15 @@ export default function CampaignMapPage() {
     return travelStations[stationId] ?? true;
   }
 
-  async function callCampaignMapApi(action: string, payload: Record<string, unknown>) {
-    if (!user) throw new Error("Not signed in.");
-    const idToken = await user.getIdToken();
-    const res = await fetch("/api/campaign-map", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${idToken}`,
-      },
-      body: JSON.stringify({ action, ...payload }),
-    });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      throw new Error(data?.error || "Request failed.");
-    }
-  }
-
   async function setSectorStatus(sectorId: string, status: SectorStatus) {
     setBusyKey(`sector-${sectorId}`);
     setError("");
     try {
-      await callCampaignMapApi("set_sector_status", { sectorId, status });
+      await setDoc(
+        doc(db, ...CAMPAIGN_DOC_PATH),
+        { sectorStatuses: { [sectorId]: status } },
+        { merge: true }
+      );
     } catch (err: any) {
       console.error("[Campaign Map] setSectorStatus failed", err);
       setError(err?.message || "Failed to update sector status.");
@@ -124,7 +111,11 @@ export default function CampaignMapPage() {
     setBusyKey(`station-${stationId}`);
     setError("");
     try {
-      await callCampaignMapApi("set_travel_station_lock", { travelStationId: stationId, locked: next });
+      await setDoc(
+        doc(db, ...CAMPAIGN_DOC_PATH),
+        { travelStations: { [stationId]: next } },
+        { merge: true }
+      );
     } catch (err: any) {
       console.error("[Campaign Map] toggleStation failed", err);
       setError(err?.message || "Failed to update travel station.");
