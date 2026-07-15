@@ -41,17 +41,15 @@ function getPosition(sectorId: string): { x: number; y: number } {
   };
 }
 
+// Stations sit as waypoints along the line, not stacked at the midpoint: Sector A -> Station 1 -> Station 2 -> Sector B.
 function getStationPosition(a: string, b: string, slot: 1 | 2) {
   const pa = getPosition(a);
   const pb = getPosition(b);
-  const mx = (pa.x + pb.x) / 2;
-  const my = (pa.y + pb.y) / 2;
-  const dx = pb.x - pa.x;
-  const dy = pb.y - pa.y;
-  const len = Math.sqrt(dx * dx + dy * dy) || 1;
-  const perpX = (-dy / len) * (slot === 1 ? 3.2 : -3.2);
-  const perpY = (dx / len) * (slot === 1 ? 3.2 : -3.2);
-  return { x: mx + perpX, y: my + perpY };
+  const t = slot === 1 ? 1 / 3 : 2 / 3;
+  return {
+    x: pa.x + (pb.x - pa.x) * t,
+    y: pa.y + (pb.y - pa.y) * t,
+  };
 }
 
 export default function CampaignMapPage() {
