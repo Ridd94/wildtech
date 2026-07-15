@@ -2,6 +2,8 @@ import Anthropic from "@anthropic-ai/sdk";
 import { getAdminAuth, getAdminDb } from "@/lib/firebase/admin";
 import { isGmAllowedEmail } from "@/lib/wildtech/access";
 import {
+  CAMPAIGN_SECTOR_CATALOG,
+  CAMPAIGN_TRAVEL_STATION_CATALOG,
   GM_ASSISTANT_TOOLS,
   GRAFT_ID_NAME_CATALOG,
   PRESET_ITEM_CATALOG,
@@ -94,6 +96,8 @@ export async function POST(req: Request) {
 
   const itemCatalogLines = PRESET_ITEM_CATALOG.map((i) => `${i.id}: ${i.name}`).join("\n");
   const graftCatalogLines = GRAFT_ID_NAME_CATALOG.map((g) => `${g.id}: ${g.name}`).join("\n");
+  const sectorCatalogLines = CAMPAIGN_SECTOR_CATALOG.map((s) => `${s.id}: ${s.name}`).join("\n");
+  const travelStationCatalogLines = CAMPAIGN_TRAVEL_STATION_CATALOG.map((s) => `${s.id}: ${s.label}`).join("\n");
 
   const system = `You are the GM's assistant for a live WildTech tabletop session. Game code: ${game.code ?? "unknown"}. Party Scrap: ${gameContext.scrapAmount}/20.
 
@@ -112,7 +116,15 @@ Blueprints represent schematics the party has found. To reveal one, use "reveal_
 
 Use "add_custom_graft" when a GM describes a graft that isn't in the catalog above — it installs immediately on the target character, same as a real graft. Use "set_soul_charges" only for Soul-Slinger characters (check the "class" / "classId" field on the roster above first); it fails harmlessly if used on a non-Soul-Slinger. Use "adjust_party_scrap" for requests about the party's shared Scrap pool (0-20) — it always sets the absolute value, so compute the new total yourself from the current Party Scrap value above when the request is a relative change (e.g. "give the party 5 scrap"). Use "give_starter_kit_to_party" when a GM wants to re-equip or gear up everyone at once (e.g. "give everyone a basic kit") — it gives a knife, jacket, and med patch to every joined character who doesn't already have them.
 
-Some items (mostly Medical and Traps) are usable — a player can request to use one from their sheet, which shows as "pending item use" on the roster above until the GM confirms. Use "approve_item_use" or "deny_item_use" with that character's id when a GM responds to a pending request (e.g. "let Jax use it" or "deny that"). Approving a healing item heals the stated amount and removes the item; approving a narrative item (like a trap) just removes it and leaves the effect to be resolved at the table. Don't call these for a character with no pending request.`;
+Some items (mostly Medical and Traps) are usable — a player can request to use one from their sheet, which shows as "pending item use" on the roster above until the GM confirms. Use "approve_item_use" or "deny_item_use" with that character's id when a GM responds to a pending request (e.g. "let Jax use it" or "deny that"). Approving a healing item heals the stated amount and removes the item; approving a narrative item (like a trap) just removes it and leaves the effect to be resolved at the table. Don't call these for a character with no pending request.
+
+The Sanctuary Campaign map is separate, persistent, global state — not tied to this game session or any one character. Sectors (id: name):
+${sectorCatalogLines}
+
+Travel stations (id: connection):
+${travelStationCatalogLines}
+
+Use "set_sector_status" to mark a sector liberated, destroyed, not_visited, or needs_interaction (e.g. "the party liberated the Foundry"). Use "set_travel_station_lock" to lock or unlock a specific travel station between two sectors — if the GM doesn't specify which of the two stations on a connection, just pick one and say which you picked.`;
 
   const messages: Anthropic.MessageParam[] = [
     ...history.map((turn) => ({ role: turn.role, content: turn.content })),

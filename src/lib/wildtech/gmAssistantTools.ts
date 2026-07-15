@@ -2,6 +2,13 @@ import { FieldValue, type Firestore } from "firebase-admin/firestore";
 import { GRAFT_CATALOG, type CharacterGraft } from "@/lib/wildtech/grafts";
 import { ITEMS } from "@/lib/game/items";
 import { getBlueprint } from "@/lib/wildtech/blueprints";
+import {
+  SECTOR_DEFS,
+  SECTOR_STATUS_META,
+  TRAVEL_STATIONS,
+  getSectorDef,
+  type SectorStatus,
+} from "@/lib/wildtech/campaignMap";
 
 type StatMods = {
   ATT?: number;
@@ -52,6 +59,14 @@ const SOUL_SLINGER_CLASS_ID = "soul-slinger";
 const SOUL_CHARGE_MAX = 5;
 const SCRAP_MAX = 20;
 const STARTER_KIT_ITEM_IDS = ["knife", "leather_jacket", "med_patch"];
+const CAMPAIGN_DOC_PATH = ["campaignMaps", "sanctuary"] as const;
+
+export const CAMPAIGN_SECTOR_CATALOG = SECTOR_DEFS.map((s) => ({ id: s.id, name: s.name }));
+export const CAMPAIGN_TRAVEL_STATION_CATALOG = TRAVEL_STATIONS.map((s) => ({
+  id: s.id,
+  label: `${getSectorDef(s.a)?.name} <-> ${getSectorDef(s.b)?.name} (station ${s.slot})`,
+}));
+export const CAMPAIGN_STATUS_VALUES = Object.keys(SECTOR_STATUS_META) as SectorStatus[];
 
 function clamp(n: number, min: number, max: number) {
   return Math.max(min, Math.min(max, n));
@@ -261,6 +276,35 @@ export const GM_ASSISTANT_TOOLS = [
       required: ["characterId"],
     },
   },
+  {
+    name: "set_sector_status",
+    description:
+      "Set a Sanctuary Campaign map sector's status. This is global campaign state, independent of any one game session or character.",
+    input_schema: {
+      type: "object",
+      properties: {
+        sectorId: { type: "string", description: "The sector's catalog ID." },
+        status: {
+          type: "string",
+          enum: CAMPAIGN_STATUS_VALUES,
+        },
+      },
+      required: ["sectorId", "status"],
+    },
+  },
+  {
+    name: "set_travel_station_lock",
+    description:
+      "Lock or unlock a travel station on the Sanctuary Campaign map. This is global campaign state, independent of any one game session or character.",
+    input_schema: {
+      type: "object",
+      properties: {
+        travelStationId: { type: "string", description: "The travel station's catalog ID." },
+        locked: { type: "boolean" },
+      },
+      required: ["travelStationId", "locked"],
+    },
+  },
 ] as const;
 
 type ToolExecutionResult = { summary: string } | { error: string };
@@ -272,6 +316,38 @@ export async function executeGmAssistantTool(
   input: any,
   gameContext?: GameContext
 ): Promise<ToolExecutionResult> {
+  if (toolName === "set_sector_status") {
+    const sector = getSectorDef(String(input?.sectorId));
+    if (!sector) return { error: "Unknown sector ID." };
+    if (sector.isHub) return { error: "The Spire doesn't have a status." };
+    const status = String(input?.status) as SectorStatus;
+    if (!CAMPAIGN_STATUS_VALUES.includes(status)) return { error: "Unknown sector status." };
+
+    await db
+      .collection(CAMPAIGN_DOC_PATH[0])
+      .doc(CAMPAIGN_DOC_PATH[1])
+      .set({ sectorStatuses: { [sector.id]: status } }, { merge: true });
+
+    return { summary: `Set ${sector.name} to "${SECTOR_STATUS_META[status].label}".` };
+  }
+
+  if (toolName === "set_travel_station_lock") {
+    const station = TRAVEL_STATIONS.find((s) => s.id === input?.travelStationId);
+    if (!station) return { error: "Unknown travel station ID." };
+    const locked = !!input?.locked;
+
+    await db
+      .collection(CAMPAIGN_DOC_PATH[0])
+      .doc(CAMPAIGN_DOC_PATH[1])
+      .set({ travelStations: { [station.id]: locked } }, { merge: true });
+
+    return {
+      summary: `${locked ? "Locked" : "Unlocked"} the travel station between ${getSectorDef(station.a)?.name} and ${
+        getSectorDef(station.b)?.name
+      } (station ${station.slot}).`,
+    };
+  }
+
   if (toolName === "adjust_party_scrap") {
     if (!gameContext) return { error: "No active game to apply this to." };
     const clamped = clamp(Number(input?.scrapAmount), 0, SCRAP_MAX);

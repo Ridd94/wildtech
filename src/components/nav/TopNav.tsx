@@ -17,6 +17,7 @@ const GM_EMAIL = "luke@southwalescustomcomputers.com";
 
 const TABS: Tab[] = [
   { href: "/character/vault", label: "Player" },
+  { href: "/campaign", label: "Campaign Map" },
   { href: "/systems/hunger", label: "Grafting System" },
   { href: "/gm", label: "Game Master", restricted: true },
   { href: "/gm/history", label: "Game History", restricted: true },
