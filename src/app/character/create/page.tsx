@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { collection, doc, serverTimestamp, setDoc } from "firebase/firestore";
@@ -673,119 +673,6 @@ function addMods(...allMods: Array<StatMods | undefined | null>): StatMods {
   return result;
 }
 
-const LOOT_CATEGORY_TO_SLOT: Record<string, ItemCategory> = {
-  "melee weapons": "weapon",
-  pistols: "weapon",
-  smgs: "weapon",
-  rifles: "weapon",
-  shotguns: "weapon",
-  "heavy weapons": "weapon",
-  armour: "armour",
-  medical: "vitality",
-  utilities: "utility",
-  traps: "utility",
-};
-
-function inferCategory(raw: any): ItemCategory | null {
-  const direct =
-    raw?.category ||
-    raw?.slot ||
-    raw?.type ||
-    raw?.itemType ||
-    raw?.group ||
-    raw?.kind;
-
-  const normalizedDirect = String(direct || "").trim().toLowerCase();
-
-  if (
-    normalizedDirect === "weapon" ||
-    normalizedDirect === "vitality" ||
-    normalizedDirect === "utility" ||
-    normalizedDirect === "armour"
-  ) {
-    return normalizedDirect as ItemCategory;
-  }
-
-  if (LOOT_CATEGORY_TO_SLOT[normalizedDirect]) {
-    return LOOT_CATEGORY_TO_SLOT[normalizedDirect];
-  }
-
-  if (normalizedDirect === "armor") return "armour";
-  if (
-    normalizedDirect === "healing" ||
-    normalizedDirect === "heal" ||
-    normalizedDirect === "medical"
-  ) {
-    return "vitality";
-  }
-
-  const text = `${raw?.id || ""} ${raw?.name || ""} ${raw?.title || ""} ${raw?.description || ""} ${raw?.desc || ""}`
-    .toLowerCase()
-    .trim();
-
-  if (
-    text.includes("jacket") ||
-    text.includes("armor") ||
-    text.includes("armour") ||
-    text.includes("plate") ||
-    text.includes("shell") ||
-    text.includes("coat") ||
-    text.includes("vest")
-  ) {
-    return "armour";
-  }
-
-  if (
-    text.includes("med") ||
-    text.includes("patch") ||
-    text.includes("stim") ||
-    text.includes("syringe") ||
-    text.includes("injector") ||
-    text.includes("heal") ||
-    text.includes("bandage")
-  ) {
-    return "vitality";
-  }
-
-  if (
-    text.includes("visor") ||
-    text.includes("scanner") ||
-    text.includes("tool") ||
-    text.includes("kit") ||
-    text.includes("drone") ||
-    text.includes("key") ||
-    text.includes("charm")
-  ) {
-    return "utility";
-  }
-
-  if (
-    text.includes("knife") ||
-    text.includes("pistol") ||
-    text.includes("rifle") ||
-    text.includes("blade") ||
-    text.includes("gun") ||
-    text.includes("baton") ||
-    text.includes("launcher") ||
-    text.includes("mace")
-  ) {
-    return "weapon";
-  }
-
-  return null;
-}
-
-function uniqueById<T extends { id: string }>(items: T[]) {
-  const seen = new Set<string>();
-  const out: T[] = [];
-  for (const item of items) {
-    if (!item.id || seen.has(item.id)) continue;
-    seen.add(item.id);
-    out.push(item);
-  }
-  return out;
-}
-
 function SectionList({
   title,
   items,
@@ -1225,7 +1112,6 @@ export default function CreateCharacterPage() {
   const [expandedClassLoreId, setExpandedClassLoreId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  const [itemsModule, setItemsModule] = useState<any>(null);
 
   const selectedRace = useMemo(
     () => RACES.find((race) => race.id === selectedRaceId) || null,
@@ -1237,68 +1123,9 @@ export default function CreateCharacterPage() {
     [selectedClassId]
   );
 
-  useEffect(() => {
-    let mounted = true;
-    (async () => {
-      try {
-        const mod = await import("@/lib/game/items");
-        if (mounted) setItemsModule(mod);
-      } catch {
-        if (mounted) setItemsModule(null);
-      }
-    })();
-
-    return () => {
-      mounted = false;
-    };
-  }, []);
-
-  const equipmentList: Item[] = useMemo(() => {
-    const mod = itemsModule;
-    const list =
-      mod?.ITEMS ||
-      mod?.items ||
-      mod?.ITEM_LIST ||
-      mod?.ALL_ITEMS ||
-      mod?.default?.ITEMS ||
-      mod?.default?.items ||
-      null;
-
-    const rawItems: any[] = Array.isArray(list)
-      ? list
-      : list && typeof list === "object"
-      ? Object.values(list)
-      : [];
-
-    if (rawItems.length === 0) {
-      return FALLBACK_ITEMS;
-    }
-
-    const normalized = rawItems
-      .map((x: any) => {
-        const category = inferCategory(x);
-        if (!category) return null;
-
-        return {
-          id: String(x?.id ?? ""),
-          name: x?.name || x?.title || String(x?.id ?? "Unknown"),
-          description: x?.description || x?.desc || "",
-          category,
-          mods: x?.statMods || x?.mods || x?.bonus || {},
-        } as Item;
-      })
-      .filter(Boolean) as Item[];
-
-    const merged = uniqueById([...normalized, ...FALLBACK_ITEMS]);
-
-    const hasAllCategories =
-      merged.some((item) => item.category === "weapon") &&
-      merged.some((item) => item.category === "vitality") &&
-      merged.some((item) => item.category === "utility") &&
-      merged.some((item) => item.category === "armour");
-
-    return hasAllCategories ? merged : FALLBACK_ITEMS;
-  }, [itemsModule]);
+  // Starting gear is intentionally a small curated set (FALLBACK_ITEMS), not the full loot
+  // catalog — everything else is found in play or handed out by the GM.
+  const equipmentList: Item[] = FALLBACK_ITEMS;
 
   const weaponOptions = useMemo(
     () => equipmentList.filter((item) => item.category === "weapon"),
