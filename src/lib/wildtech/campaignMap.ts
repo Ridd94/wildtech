@@ -9,19 +9,24 @@ export type SectorDef = {
   isHub?: boolean;
 };
 
-export const SECTOR_STATUS_META: Record<SectorStatus, { label: string; color: string }> = {
-  liberated: { label: "Liberated", color: "#22c55e" },
-  destroyed: { label: "Destroyed", color: "#ef4444" },
-  not_visited: { label: "Not Visited", color: "#64748b" },
-  needs_interaction: { label: "Needs Interaction", color: "#eab308" },
+export const SECTOR_STATUS_META: Record<
+  SectorStatus,
+  { label: string; shortLabel: string; icon: string; color: string }
+> = {
+  liberated: { label: "Liberated", shortLabel: "Liberated", icon: "✅", color: "#22c55e" },
+  destroyed: { label: "Destroyed", shortLabel: "Destroyed", icon: "💥", color: "#ef4444" },
+  not_visited: { label: "Not Visited", shortLabel: "Unvisited", icon: "❓", color: "#64748b" },
+  needs_interaction: { label: "Needs Interaction", shortLabel: "Needs Action", icon: "⚠️", color: "#eab308" },
 };
 
 export const DEFAULT_SECTOR_STATUS: SectorStatus = "not_visited";
 
 // Ring order, clockwise starting from the top (12 o'clock), matching the Sanctuary Campaign map art.
 // Sector 3 is intentionally absent from the map — its disappearance is part of the campaign's story.
+// Note: the hub keeps id "spire" even though it now displays as "The Bunker" — travel station IDs are
+// built from this id, so changing it would silently orphan every already-toggled spoke station in Firestore.
 export const SECTOR_DEFS: SectorDef[] = [
-  { id: "spire", number: null, name: "The Spire", icon: "\u{1F5FC}", color: "#38bdf8", isHub: true },
+  { id: "spire", number: null, name: "The Bunker", icon: "🛡️", color: "#38bdf8", isHub: true },
   { id: "final_sector", number: 10, name: "Final Sector", icon: "❓", color: "#64748b" },
   { id: "the_quarry", number: 9, name: "The Quarry", icon: "⛏️", color: "#d97706" },
   { id: "reactor_core", number: 8, name: "Reactor Core", icon: "☢️", color: "#ef4444" },

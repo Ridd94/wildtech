@@ -232,29 +232,39 @@ export default function CampaignMapPage() {
                     left: `${pos.x}%`,
                     top: `${pos.y}%`,
                     transform: "translate(-50%, -50%)",
-                    width: sector.isHub ? "24%" : "19%",
+                    width: sector.isHub ? "26%" : "19%",
                     aspectRatio: "1 / 1",
                     clipPath: "polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%)",
-                    background: isSelected
+                    background: sector.isHub
+                      ? `radial-gradient(circle at 50% 35%, ${sector.color}99, ${sector.color}33 55%, rgba(6,8,14,0.95) 100%)`
+                      : isSelected
                       ? `linear-gradient(160deg, ${sector.color}55, ${sector.color}22)`
                       : `linear-gradient(160deg, ${sector.color}33, rgba(10,12,20,0.85))`,
-                    border: `2px solid ${isSelected ? sector.color : "rgba(255,255,255,0.14)"}`,
+                    border: `2px solid ${
+                      sector.isHub ? sector.color : isSelected ? sector.color : "rgba(255,255,255,0.14)"
+                    }`,
+                    boxShadow: sector.isHub
+                      ? `0 0 24px 4px ${sector.color}66, inset 0 0 18px ${sector.color}55`
+                      : isSelected
+                      ? `0 0 12px 2px ${sector.color}55`
+                      : "none",
                     display: "grid",
                     placeItems: "center",
-                    gap: 2,
+                    gap: 3,
                     cursor: "pointer",
                     padding: 4,
-                    zIndex: isSelected ? 2 : 1,
+                    zIndex: isSelected || sector.isHub ? 2 : 1,
                   }}
                 >
-                  <span style={{ fontSize: sector.isHub ? 22 : 18, lineHeight: 1 }}>{sector.icon}</span>
+                  <span style={{ fontSize: sector.isHub ? 26 : 18, lineHeight: 1 }}>{sector.icon}</span>
                   <span
                     style={{
-                      fontSize: 10,
+                      fontSize: sector.isHub ? 12 : 10,
                       fontWeight: 800,
                       color: "var(--wt-text)",
                       textAlign: "center",
                       lineHeight: 1.15,
+                      textShadow: sector.isHub ? `0 0 10px ${sector.color}` : "none",
                     }}
                   >
                     {sector.number != null ? `${sector.number}. ` : ""}
@@ -263,13 +273,23 @@ export default function CampaignMapPage() {
                   {!sector.isHub ? (
                     <span
                       style={{
-                        width: 8,
-                        height: 8,
-                        borderRadius: "999px",
-                        background: statusMeta.color,
-                        boxShadow: `0 0 6px ${statusMeta.color}`,
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 3,
+                        fontSize: 8,
+                        fontWeight: 700,
+                        color: "var(--wt-text)",
+                        background: `${statusMeta.color}2e`,
+                        border: `1px solid ${statusMeta.color}`,
+                        borderRadius: 999,
+                        padding: "1px 6px",
+                        whiteSpace: "nowrap",
+                        lineHeight: 1.4,
                       }}
-                    />
+                    >
+                      <span>{statusMeta.icon}</span>
+                      <span>{statusMeta.shortLabel}</span>
+                    </span>
                   ) : null}
                 </button>
               );
@@ -311,16 +331,7 @@ export default function CampaignMapPage() {
           <div className="wt-chipRow" style={{ marginTop: 16, justifyContent: "center" }}>
             {(Object.keys(SECTOR_STATUS_META) as SectorStatus[]).map((status) => (
               <span key={status} className="wt-chip">
-                <span
-                  style={{
-                    display: "inline-block",
-                    width: 8,
-                    height: 8,
-                    borderRadius: "999px",
-                    background: SECTOR_STATUS_META[status].color,
-                    marginRight: 6,
-                  }}
-                />
+                <span style={{ marginRight: 5 }}>{SECTOR_STATUS_META[status].icon}</span>
                 {SECTOR_STATUS_META[status].label}
               </span>
             ))}
@@ -368,6 +379,7 @@ export default function CampaignMapPage() {
               <div className="wt-item">
                 <div className="wt-kicker">Status</div>
                 <div className="wt-itemName" style={{ marginBottom: isGm ? 10 : 0 }}>
+                  {SECTOR_STATUS_META[getStatus(selectedSector.id)].icon}{" "}
                   {SECTOR_STATUS_META[getStatus(selectedSector.id)].label}
                 </div>
 
@@ -385,7 +397,7 @@ export default function CampaignMapPage() {
                         onClick={() => setSectorStatus(selectedSector.id, status)}
                         disabled={busyKey === `sector-${selectedSector.id}`}
                       >
-                        {SECTOR_STATUS_META[status].label}
+                        {SECTOR_STATUS_META[status].icon} {SECTOR_STATUS_META[status].label}
                       </button>
                     ))}
                   </div>
