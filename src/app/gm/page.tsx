@@ -86,6 +86,7 @@ type CharacterDoc = {
   availableGraftIds?: string[];
   knownBlueprintIds?: string[];
   soulCharges?: number;
+  fuel?: number;
   pendingItemUse?: PendingItemUse | null;
   lastItemUseNotice?: string | null;
   activeGameId: string | null;
@@ -110,6 +111,7 @@ type ItemResolved = {
   description?: string;
   tags?: string[];
   mods?: StatMods;
+  fuelCapacity?: number;
 };
 
 const GM_EMAIL = "luke@southwalescustomcomputers.com";
@@ -266,6 +268,7 @@ export default function GmPage() {
   const [grantingCustomGraft, setGrantingCustomGraft] = useState(false);
   const [customGraftMessage, setCustomGraftMessage] = useState("");
   const [soulChargeBusyId, setSoulChargeBusyId] = useState("");
+  const [fuelBusyId, setFuelBusyId] = useState("");
   const [scrapBusy, setScrapBusy] = useState(false);
   const [scrapInput, setScrapInput] = useState("");
   const [startingKitBusy, setStartingKitBusy] = useState(false);
@@ -383,6 +386,7 @@ export default function GmPage() {
         description: it.description || it.desc || "",
         tags: it.tags || [],
         mods: it.statMods || it.mods || it.bonus || {},
+        fuelCapacity: typeof it.fuelCapacity === "number" ? it.fuelCapacity : undefined,
       };
     }
 
@@ -404,6 +408,7 @@ export default function GmPage() {
           description: found.description || found.desc || "",
           tags: found.tags || [],
           mods: found.statMods || found.mods || found.bonus || {},
+          fuelCapacity: typeof found.fuelCapacity === "number" ? found.fuelCapacity : undefined,
         };
       }
     }
@@ -820,6 +825,34 @@ export default function GmPage() {
       setError(err?.message || "Failed to update Soul Charges.");
     } finally {
       setSoulChargeBusyId("");
+    }
+  }
+
+  async function adjustFuel(characterId: string, nextValue: number, max: number) {
+    const target = joinedCharacters.find((c) => c.id === characterId);
+    if (!target || max <= 0) return;
+
+    const clamped = clamp(nextValue, 0, max);
+
+    setFuelBusyId(characterId);
+    setError("");
+
+    try {
+      await updateDoc(doc(db, "characters", characterId), {
+        fuel: clamped,
+        updatedAt: serverTimestamp(),
+      });
+    } catch (err: any) {
+      console.error("[GM Dashboard] adjustFuel failed", {
+        message: err?.message,
+        code: err?.code,
+        characterId,
+        uid: user?.uid,
+        projectId: firebaseProjectId,
+      });
+      setError(err?.message || "Failed to update Fuel.");
+    } finally {
+      setFuelBusyId("");
     }
   }
 
@@ -2762,6 +2795,60 @@ export default function GmPage() {
                             </div>
                           </div>
                         ) : null}
+
+                        {(() => {
+                          const fuelWeapon = resolvedEquipment.find(
+                            (item) => (item.fuelCapacity ?? 0) > 0
+                          );
+                          if (!fuelWeapon) return null;
+
+                          const fuelMax = fuelWeapon.fuelCapacity ?? 0;
+                          const fuel = clamp(
+                            typeof character.fuel === "number" ? character.fuel : fuelMax,
+                            0,
+                            fuelMax
+                          );
+
+                          return (
+                            <div className="wt-item">
+                              <div className="wt-itemTop">
+                                <div>
+                                  <div className="wt-kicker">Fuel — {fuelWeapon.name}</div>
+                                  <div className="wt-itemName">
+                                    {fuel}/{fuelMax}
+                                  </div>
+                                </div>
+                              </div>
+
+                              <div className="wt-chipRow" style={{ marginTop: 10 }}>
+                                <button
+                                  type="button"
+                                  className="wt-btn wt-btnSmall"
+                                  onClick={() => adjustFuel(character.id, fuel - 1, fuelMax)}
+                                  disabled={fuelBusyId === character.id}
+                                >
+                                  -1
+                                </button>
+                                <button
+                                  type="button"
+                                  className="wt-btn wt-btnSmall"
+                                  onClick={() => adjustFuel(character.id, fuel + 1, fuelMax)}
+                                  disabled={fuelBusyId === character.id}
+                                >
+                                  +1
+                                </button>
+                                <button
+                                  type="button"
+                                  className="wt-btn wt-btnPrimary wt-btnSmall"
+                                  onClick={() => adjustFuel(character.id, fuelMax, fuelMax)}
+                                  disabled={fuelBusyId === character.id}
+                                >
+                                  Refuel Tank
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })()}
 
                         <div style={{ display: "grid", gap: 10 }}>
                           <div>

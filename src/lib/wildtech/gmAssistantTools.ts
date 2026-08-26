@@ -1,6 +1,6 @@
 import { FieldValue, type Firestore } from "firebase-admin/firestore";
 import { GRAFT_CATALOG, type CharacterGraft } from "@/lib/wildtech/grafts";
-import { ITEMS } from "@/lib/game/items";
+import { ITEMS, getFuelCapacity } from "@/lib/game/items";
 import { getBlueprint } from "@/lib/wildtech/blueprints";
 import {
   SECTOR_DEFS,
@@ -43,6 +43,7 @@ export type JoinedCharacter = {
   availableGraftIds?: string[];
   knownBlueprintIds?: string[];
   soulCharges?: number;
+  fuel?: number;
   pendingItemUse?: PendingItemUse | null;
   currentHp?: number;
   maxHp?: number;
@@ -231,6 +232,19 @@ export const GM_ASSISTANT_TOOLS = [
         soulCharges: { type: "number" },
       },
       required: ["characterId", "soulCharges"],
+    },
+  },
+  {
+    name: "set_fuel",
+    description:
+      "Set a character's current Fuel (clamped between 0 and the tank size of their equipped fuel-fed weapon, e.g. the Flamethrower). Only meaningful for characters carrying fuel-fed gear.",
+    input_schema: {
+      type: "object",
+      properties: {
+        characterId: { type: "string" },
+        fuel: { type: "number" },
+      },
+      required: ["characterId", "fuel"],
     },
   },
   {
@@ -558,6 +572,18 @@ export async function executeGmAssistantTool(
       await ref.update({ soulCharges: clamped, updatedAt: FieldValue.serverTimestamp() });
       target.soulCharges = clamped;
       return { summary: `Set ${target.name}'s Soul Charges to ${clamped}/${SOUL_CHARGE_MAX}.` };
+    }
+
+    case "set_fuel": {
+      const fuelMax = getFuelCapacity(target.equipment ?? []);
+      if (fuelMax <= 0) {
+        return { error: `${target.name} isn't carrying any fuel-fed gear, so they don't track Fuel.` };
+      }
+      const clamped = clamp(Number(input.fuel), 0, fuelMax);
+      if (!Number.isFinite(clamped)) return { error: "fuel must be a number." };
+      await ref.update({ fuel: clamped, updatedAt: FieldValue.serverTimestamp() });
+      target.fuel = clamped;
+      return { summary: `Set ${target.name}'s Fuel to ${clamped}/${fuelMax}.` };
     }
 
     case "approve_item_use": {

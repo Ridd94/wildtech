@@ -14,6 +14,8 @@ export type Item = {
   statMods?: StatMods;
   usable?: boolean;
   useEffect?: ItemUseEffect;
+  /** Tank size for fuel-fed gear. Only set on items that burn fuel to fire. */
+  fuelCapacity?: number;
 };
 
 export const ITEMS: Record<string, Item> = {
@@ -212,6 +214,7 @@ export const ITEMS: Record<string, Item> = {
     description: "A fuel-fed flamethrower that turns a room into a furnace. Nobody trusts the person carrying it.",
     category: "Heavy Weapons",
     statMods: { ATT: 6, TEC: 1, CHA: -1 },
+    fuelCapacity: 6,
   },
   minigun: {
     id: "minigun",
@@ -496,4 +499,13 @@ export const ITEM_CATEGORY_ORDER = [
 
 export function getItem(itemId: string): Item | null {
   return ITEMS[itemId] ?? null;
+}
+
+/** Largest fuel tank among the given items, or 0 if none of them burn fuel. */
+export function getFuelCapacity(itemIds: string[]): number {
+  let capacity = 0;
+  for (const itemId of itemIds) {
+    capacity = Math.max(capacity, ITEMS[itemId]?.fuelCapacity ?? 0);
+  }
+  return capacity;
 }

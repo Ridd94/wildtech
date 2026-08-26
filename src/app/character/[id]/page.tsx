@@ -67,6 +67,7 @@ type CharacterDoc = {
   availableGraftIds?: string[];
   knownBlueprintIds?: string[];
   soulCharges?: number;
+  fuel?: number;
   pendingItemUse?: PendingItemUse | null;
   lastItemUseNotice?: string | null;
   currentHp?: number;
@@ -92,6 +93,7 @@ type ItemResolved = {
   mods?: StatMods;
   usable?: boolean;
   useEffect?: ItemUseEffect;
+  fuelCapacity?: number;
 };
 
 const EQUIP_LIMIT = 4;
@@ -464,6 +466,7 @@ export default function CharacterSheetPage() {
         mods: it.statMods || it.mods || it.bonus || {},
         usable: !!it.usable,
         useEffect: it.useEffect,
+        fuelCapacity: typeof it.fuelCapacity === "number" ? it.fuelCapacity : undefined,
       };
     }
 
@@ -487,6 +490,7 @@ export default function CharacterSheetPage() {
           mods: found.statMods || found.mods || found.bonus || {},
           usable: !!found.usable,
           useEffect: found.useEffect,
+          fuelCapacity: typeof found.fuelCapacity === "number" ? found.fuelCapacity : undefined,
         };
       }
     }
@@ -745,6 +749,15 @@ export default function CharacterSheetPage() {
   const isSoulSlinger = character?.classId === SOUL_SLINGER_CLASS_ID;
   const soulCharges = typeof character?.soulCharges === "number" ? character.soulCharges : SOUL_CHARGE_MAX;
 
+  const fuelWeapon = useMemo(
+    () => equippedItems.find((it) => (it.fuelCapacity ?? 0) > 0) ?? null,
+    [equippedItems]
+  );
+  const fuelMax = fuelWeapon?.fuelCapacity ?? 0;
+  const fuel = clamp(typeof character?.fuel === "number" ? character.fuel : fuelMax, 0, fuelMax);
+
+  const meterCount = 3 + (isSoulSlinger ? 1 : 0) + (fuelWeapon ? 1 : 0);
+
   const heroSubtitle = [
     character?.raceName || null,
     character?.className || null,
@@ -904,7 +917,7 @@ export default function CharacterSheetPage() {
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: `repeat(${isSoulSlinger ? 4 : 3}, minmax(0, 1fr))`,
+            gridTemplateColumns: `repeat(${meterCount}, minmax(0, 1fr))`,
             gap: 14,
           }}
         >
@@ -936,6 +949,15 @@ export default function CharacterSheetPage() {
               max={SOUL_CHARGE_MAX}
               fill="linear-gradient(90deg, #f472b6, #db2777)"
               meta="Spent on Spirit-Lead and other Soul-Slinger abilities. Your GM tracks this."
+            />
+          ) : null}
+          {fuelWeapon ? (
+            <Meter
+              label="Fuel"
+              value={fuel}
+              max={fuelMax}
+              fill="linear-gradient(90deg, #fb923c, #ef4444)"
+              meta={`${fuelWeapon.name} burns 1 Fuel per sustained blast. Your GM tracks this.`}
             />
           ) : null}
         </div>
@@ -1029,6 +1051,17 @@ export default function CharacterSheetPage() {
                   </button>
                 </span>
               </div>
+
+              {fuelWeapon ? (
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                  <span className="wt-pill wt-pillMuted">
+                    Fuel <strong style={{ marginLeft: 6 }}>{fuel}/{fuelMax}</strong>
+                  </span>
+                  <span className="wt-muted" style={{ fontSize: 12 }}>
+                    Your GM burns and refills this.
+                  </span>
+                </div>
+              ) : null}
 
               <div className="wt-item">
                 <div className="wt-itemTop">
@@ -1342,6 +1375,7 @@ export default function CharacterSheetPage() {
                     humanity,
                     currentHp,
                     maxHp,
+                    fuel: fuelWeapon ? { weapon: fuelWeapon.id, value: fuel, max: fuelMax } : null,
                     activeGameId: character.activeGameId,
                     activeGameCode,
                     totals,
@@ -1476,6 +1510,10 @@ export default function CharacterSheetPage() {
           }
 
           div[style*="grid-template-columns: repeat(4, minmax(0, 1fr))"] {
+            grid-template-columns: 1fr !important;
+          }
+
+          div[style*="grid-template-columns: repeat(5, minmax(0, 1fr))"] {
             grid-template-columns: 1fr !important;
           }
 
