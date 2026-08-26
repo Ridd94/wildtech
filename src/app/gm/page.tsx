@@ -59,6 +59,7 @@ type GameDoc = {
   savedAt?: any;
   savedRoster?: SavedRosterCharacter[];
   scrapAmount?: number;
+  jerryCanFuel?: number;
 };
 
 type PendingItemUse = {
@@ -99,6 +100,8 @@ type CharacterDoc = {
 const SOUL_SLINGER_CLASS_ID = "soul-slinger";
 const SOUL_CHARGE_MAX = 5;
 const SCRAP_MAX = 20;
+/** The party's shared jerry can, in litres. */
+const JERRY_CAN_MAX = 20;
 const STARTER_KIT_ITEM_IDS = ["knife", "leather_jacket", "med_patch"];
 
 type JoinedCharacter = CharacterDoc & {
@@ -271,6 +274,8 @@ export default function GmPage() {
   const [fuelBusyId, setFuelBusyId] = useState("");
   const [scrapBusy, setScrapBusy] = useState(false);
   const [scrapInput, setScrapInput] = useState("");
+  const [jerryBusy, setJerryBusy] = useState(false);
+  const [jerryInput, setJerryInput] = useState("");
   const [startingKitBusy, setStartingKitBusy] = useState(false);
   const [startingKitMessage, setStartingKitMessage] = useState("");
   const [itemUseBusyId, setItemUseBusyId] = useState("");
@@ -893,6 +898,39 @@ export default function GmPage() {
     const parsed = Number(value);
     if (!Number.isFinite(parsed)) return;
     await adjustPartyScrap(parsed);
+  }
+
+  async function adjustPartyFuel(nextValue: number) {
+    if (!selectedGame) return;
+
+    const clamped = clamp(nextValue, 0, JERRY_CAN_MAX);
+
+    setJerryBusy(true);
+    setError("");
+
+    try {
+      await updateDoc(doc(db, "games", selectedGame.id), {
+        jerryCanFuel: clamped,
+        updatedAt: serverTimestamp(),
+      });
+    } catch (err: any) {
+      console.error("[GM Dashboard] adjustPartyFuel failed", {
+        message: err?.message,
+        code: err?.code,
+        gameId: selectedGame.id,
+        uid: user?.uid,
+        projectId: firebaseProjectId,
+      });
+      setError(err?.message || "Failed to update the party jerry can.");
+    } finally {
+      setJerryBusy(false);
+    }
+  }
+
+  async function setExactPartyFuel(value: string) {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) return;
+    await adjustPartyFuel(parsed);
   }
 
   async function closeGame(gameId: string) {
@@ -2074,6 +2112,82 @@ export default function GmPage() {
                         disabled={scrapBusy}
                       >
                         Set Scrap
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="wt-item">
+                    <div className="wt-kicker">Party Jerry Can</div>
+                    <div className="wt-itemName">
+                      {typeof selectedGame.jerryCanFuel === "number" ? selectedGame.jerryCanFuel : 0}/
+                      {JERRY_CAN_MAX}L
+                    </div>
+                    <div className="wt-muted" style={{ fontSize: 12, marginBottom: 8 }}>
+                      Shared 20L fuel can. Visible to every joined player. Separate from the fuel in a
+                      character&apos;s own weapon tank.
+                    </div>
+
+                    <div className="wt-chipRow">
+                      <button
+                        type="button"
+                        className="wt-btn wt-btnSmall"
+                        onClick={() =>
+                          adjustPartyFuel(
+                            (typeof selectedGame.jerryCanFuel === "number" ? selectedGame.jerryCanFuel : 0) - 1
+                          )
+                        }
+                        disabled={jerryBusy}
+                      >
+                        -1
+                      </button>
+                      <button
+                        type="button"
+                        className="wt-btn wt-btnSmall"
+                        onClick={() =>
+                          adjustPartyFuel(
+                            (typeof selectedGame.jerryCanFuel === "number" ? selectedGame.jerryCanFuel : 0) + 1
+                          )
+                        }
+                        disabled={jerryBusy}
+                      >
+                        +1
+                      </button>
+                      <input
+                        type="number"
+                        min={0}
+                        max={JERRY_CAN_MAX}
+                        value={
+                          jerryInput ||
+                          String(typeof selectedGame.jerryCanFuel === "number" ? selectedGame.jerryCanFuel : 0)
+                        }
+                        onChange={(e) => setJerryInput(e.target.value)}
+                        className="wt-input"
+                        style={{ width: 90 }}
+                      />
+                      <button
+                        type="button"
+                        className="wt-btn wt-btnPrimary wt-btnSmall"
+                        onClick={() => {
+                          setExactPartyFuel(
+                            jerryInput ||
+                              String(typeof selectedGame.jerryCanFuel === "number" ? selectedGame.jerryCanFuel : 0)
+                          );
+                          setJerryInput("");
+                        }}
+                        disabled={jerryBusy}
+                      >
+                        Set Fuel
+                      </button>
+                      <button
+                        type="button"
+                        className="wt-btn wt-btnSmall"
+                        onClick={() => {
+                          adjustPartyFuel(JERRY_CAN_MAX);
+                          setJerryInput("");
+                        }}
+                        disabled={jerryBusy}
+                      >
+                        Fill
                       </button>
                     </div>
                   </div>

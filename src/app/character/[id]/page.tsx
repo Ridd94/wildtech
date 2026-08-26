@@ -39,6 +39,7 @@ type GameDoc = {
   createdAt?: any;
   updatedAt?: any;
   scrapAmount?: number;
+  jerryCanFuel?: number;
 };
 
 type PendingItemUse = {
@@ -100,6 +101,8 @@ const EQUIP_LIMIT = 4;
 const SOUL_SLINGER_CLASS_ID = "soul-slinger";
 const SOUL_CHARGE_MAX = 5;
 const SCRAP_MAX = 20;
+/** The party's shared jerry can, in litres. */
+const JERRY_CAN_MAX = 20;
 
 function clamp(n: number, min: number, max: number) {
   return Math.max(min, Math.min(max, n));
@@ -321,6 +324,7 @@ export default function CharacterSheetPage() {
   const [joiningGame, setJoiningGame] = useState(false);
   const [activeGameCode, setActiveGameCode] = useState<string>("");
   const [activeGameScrap, setActiveGameScrap] = useState<number>(0);
+  const [activeGameFuel, setActiveGameFuel] = useState<number>(0);
 
   const fallbackMap = useMemo(() => {
     const m: Record<string, ItemResolved> = {};
@@ -418,6 +422,7 @@ export default function CharacterSheetPage() {
     if (!character?.activeGameId) {
       setActiveGameCode("");
       setActiveGameScrap(0);
+      setActiveGameFuel(0);
       return;
     }
 
@@ -427,15 +432,18 @@ export default function CharacterSheetPage() {
         if (!gameSnap.exists()) {
           setActiveGameCode("");
           setActiveGameScrap(0);
+          setActiveGameFuel(0);
           return;
         }
         const data = gameSnap.data() as GameDoc;
         setActiveGameCode(data.code || "");
         setActiveGameScrap(typeof data.scrapAmount === "number" ? data.scrapAmount : 0);
+        setActiveGameFuel(typeof data.jerryCanFuel === "number" ? data.jerryCanFuel : 0);
       },
       () => {
         setActiveGameCode("");
         setActiveGameScrap(0);
+        setActiveGameFuel(0);
       }
     );
 
@@ -1076,9 +1084,14 @@ export default function CharacterSheetPage() {
                       Game ID: {character.activeGameId || "None"}
                     </div>
                     {character.activeGameId ? (
-                      <div className="wt-muted" style={{ fontSize: 12 }}>
-                        Party Scrap: {activeGameScrap}/{SCRAP_MAX}
-                      </div>
+                      <>
+                        <div className="wt-muted" style={{ fontSize: 12 }}>
+                          Party Scrap: {activeGameScrap}/{SCRAP_MAX}
+                        </div>
+                        <div className="wt-muted" style={{ fontSize: 12 }}>
+                          Party Jerry Can: {activeGameFuel}/{JERRY_CAN_MAX}L
+                        </div>
+                      </>
                     ) : null}
                   </div>
                   <span className="wt-tag">{character.activeGameId ? "Live Session" : "Idle"}</span>

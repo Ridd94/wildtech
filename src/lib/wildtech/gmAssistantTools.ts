@@ -54,11 +54,14 @@ export type JoinedCharacter = {
 export type GameContext = {
   id: string;
   scrapAmount: number;
+  jerryCanFuel: number;
 };
 
 const SOUL_SLINGER_CLASS_ID = "soul-slinger";
 const SOUL_CHARGE_MAX = 5;
 const SCRAP_MAX = 20;
+/** The party's shared jerry can, in litres. */
+const JERRY_CAN_MAX = 20;
 const STARTER_KIT_ITEM_IDS = ["knife", "leather_jacket", "med_patch"];
 const CAMPAIGN_DOC_PATH = ["campaignMaps", "sanctuary"] as const;
 
@@ -259,6 +262,17 @@ export const GM_ASSISTANT_TOOLS = [
     },
   },
   {
+    name: "set_party_fuel",
+    description: `Set the fuel in the party's shared 20L jerry can for this session, in litres (clamped between 0 and ${JERRY_CAN_MAX}). Applies to the whole party, not one character — this is the communal can they refill from, separate from the fuel in any individual character's weapon tank.`,
+    input_schema: {
+      type: "object",
+      properties: {
+        litres: { type: "number" },
+      },
+      required: ["litres"],
+    },
+  },
+  {
     name: "give_starter_kit_to_party",
     description:
       "Give every joined character a basic starter kit (a knife, a jacket, and a med patch), skipping anyone who already has those items. Use when a GM asks to re-equip or gear up the whole party from scratch.",
@@ -372,6 +386,19 @@ export async function executeGmAssistantTool(
     });
     gameContext.scrapAmount = clamped;
     return { summary: `Set party Scrap to ${clamped}/${SCRAP_MAX}.` };
+  }
+
+  if (toolName === "set_party_fuel") {
+    if (!gameContext) return { error: "No active game to apply this to." };
+    const litres = Number(input?.litres);
+    if (!Number.isFinite(litres)) return { error: "litres must be a number." };
+    const clamped = clamp(litres, 0, JERRY_CAN_MAX);
+    await db.collection("games").doc(gameContext.id).update({
+      jerryCanFuel: clamped,
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+    gameContext.jerryCanFuel = clamped;
+    return { summary: `Set the party jerry can to ${clamped}/${JERRY_CAN_MAX}L.` };
   }
 
   if (toolName === "give_starter_kit_to_party") {

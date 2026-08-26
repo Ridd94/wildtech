@@ -55,7 +55,12 @@ export async function POST(req: Request) {
     return Response.json({ error: "Game not found." }, { status: 404 });
   }
 
-  const game = gameSnap.data() as { gmId?: string; code?: string; scrapAmount?: number };
+  const game = gameSnap.data() as {
+    gmId?: string;
+    code?: string;
+    scrapAmount?: number;
+    jerryCanFuel?: number;
+  };
   if (game.gmId !== decoded.uid) {
     return Response.json({ error: "You do not GM this game." }, { status: 403 });
   }
@@ -63,6 +68,7 @@ export async function POST(req: Request) {
   const gameContext = {
     id: gameId,
     scrapAmount: typeof game.scrapAmount === "number" ? game.scrapAmount : 0,
+    jerryCanFuel: typeof game.jerryCanFuel === "number" ? game.jerryCanFuel : 0,
   };
 
   const charactersSnap = await adminDb.collection("characters").where("activeGameId", "==", gameId).get();
@@ -103,7 +109,7 @@ export async function POST(req: Request) {
   const sectorCatalogLines = CAMPAIGN_SECTOR_CATALOG.map((s) => `${s.id}: ${s.name}`).join("\n");
   const travelStationCatalogLines = CAMPAIGN_TRAVEL_STATION_CATALOG.map((s) => `${s.id}: ${s.label}`).join("\n");
 
-  const system = `You are the GM's assistant for a live WildTech tabletop session. Game code: ${game.code ?? "unknown"}. Party Scrap: ${gameContext.scrapAmount}/20.
+  const system = `You are the GM's assistant for a live WildTech tabletop session. Game code: ${game.code ?? "unknown"}. Party Scrap: ${gameContext.scrapAmount}/20. Party jerry can: ${gameContext.jerryCanFuel}/20L.
 
 Current players in this session (including what blueprints each already knows):
 ${rosterLines}
@@ -118,7 +124,7 @@ Use the provided tools to carry out requests to change a player's health, items,
 
 Blueprints represent schematics the party has found. To reveal one, use "reveal_blueprint_to_party" with a blueprintId built from the graft or item catalogs above: "graft-<graftId>" for a graft blueprint (e.g. "graft-cybernetic-laser-eye") or "item-<itemId>" for an item blueprint (e.g. "item-gauss_rifle"). This always applies to every joined player at once, not a single character.
 
-Use "add_custom_graft" when a GM describes a graft that isn't in the catalog above — it installs immediately on the target character, same as a real graft. Use "set_soul_charges" only for Soul-Slinger characters (check the "class" / "classId" field on the roster above first); it fails harmlessly if used on a non-Soul-Slinger. Use "set_fuel" for characters carrying fuel-fed gear (their "fuel" value on the roster above shows the tank size, e.g. a Flamethrower) — it sets the absolute value, so compute the new total yourself for relative changes like "Lacey burns two fuel". Use "adjust_party_scrap" for requests about the party's shared Scrap pool (0-20) — it always sets the absolute value, so compute the new total yourself from the current Party Scrap value above when the request is a relative change (e.g. "give the party 5 scrap"). Use "give_starter_kit_to_party" when a GM wants to re-equip or gear up everyone at once (e.g. "give everyone a basic kit") — it gives a knife, jacket, and med patch to every joined character who doesn't already have them.
+Use "add_custom_graft" when a GM describes a graft that isn't in the catalog above — it installs immediately on the target character, same as a real graft. Use "set_soul_charges" only for Soul-Slinger characters (check the "class" / "classId" field on the roster above first); it fails harmlessly if used on a non-Soul-Slinger. Use "set_fuel" for characters carrying fuel-fed gear (their "fuel" value on the roster above shows the tank size, e.g. a Flamethrower) — it sets the absolute value, so compute the new total yourself for relative changes like "Lacey burns two fuel". Use "set_party_fuel" for the party's shared 20L jerry can (the "Party jerry can" value above) — it sets the absolute litre count, so compute the new total yourself for relative changes like "the party pours 5 litres into the can" or "Gregg tops his flamethrower up from the can". Keep this distinct from "set_fuel", which is one character's own weapon tank: a character refuelling from the can is usually two calls, one draining the can and one filling their tank. Use "adjust_party_scrap" for requests about the party's shared Scrap pool (0-20) — it always sets the absolute value, so compute the new total yourself from the current Party Scrap value above when the request is a relative change (e.g. "give the party 5 scrap"). Use "give_starter_kit_to_party" when a GM wants to re-equip or gear up everyone at once (e.g. "give everyone a basic kit") — it gives a knife, jacket, and med patch to every joined character who doesn't already have them.
 
 Some items (mostly Medical and Traps) are usable — a player can request to use one from their sheet, which shows as "pending item use" on the roster above until the GM confirms. Use "approve_item_use" or "deny_item_use" with that character's id when a GM responds to a pending request (e.g. "let Jax use it" or "deny that"). Approving a healing item heals the stated amount and removes the item; approving a narrative item (like a trap) just removes it and leaves the effect to be resolved at the table. Don't call these for a character with no pending request.
 
