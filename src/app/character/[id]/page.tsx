@@ -764,9 +764,8 @@ export default function CharacterSheetPage() {
   const fuelMax = fuelWeapon?.fuelCapacity ?? 0;
   const fuel = clamp(typeof character?.fuel === "number" ? character.fuel : fuelMax, 0, fuelMax);
 
-  /** The shared jerry can is a party resource, so it shows whenever you're in a game. */
+  /** Party resources show whenever you're in a game, whatever you personally carry. */
   const inGame = Boolean(character?.activeGameId);
-  const meterCount = 3 + (isSoulSlinger ? 1 : 0) + (fuelWeapon ? 1 : 0) + (inGame ? 1 : 0);
 
   const heroSubtitle = [
     character?.raceName || null,
@@ -927,7 +926,7 @@ export default function CharacterSheetPage() {
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: `repeat(${meterCount}, minmax(0, 1fr))`,
+            gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
             gap: 14,
           }}
         >
@@ -977,6 +976,15 @@ export default function CharacterSheetPage() {
               max={JERRY_CAN_MAX}
               fill="linear-gradient(90deg, #fbbf24, #f59e0b)"
               meta={`The party's shared ${JERRY_CAN_MAX}L jerry can, split across everyone. Your GM tracks this.`}
+            />
+          ) : null}
+          {inGame ? (
+            <Meter
+              label="Party Scrap"
+              value={activeGameScrap}
+              max={SCRAP_MAX}
+              fill="linear-gradient(90deg, #94a3b8, #64748b)"
+              meta="The party's shared Scrap pool, spent on builds and repairs. Your GM tracks this."
             />
           ) : null}
         </div>
