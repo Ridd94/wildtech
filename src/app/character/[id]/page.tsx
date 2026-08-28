@@ -23,6 +23,7 @@ import {
 } from "@/lib/wildtech/grafts";
 import { getBlueprint } from "@/lib/wildtech/blueprints";
 import type { ItemUseEffect } from "@/lib/game/items";
+import type { ActiveVote, VoteChoice } from "@/lib/wildtech/votes";
 
 type StatMods = {
   ATT?: number;
@@ -40,6 +41,7 @@ type GameDoc = {
   updatedAt?: any;
   scrapAmount?: number;
   jerryCanFuel?: number;
+  activeVote?: ActiveVote | null;
 };
 
 type PendingItemUse = {
@@ -71,6 +73,7 @@ type CharacterDoc = {
   fuel?: number;
   pendingItemUse?: PendingItemUse | null;
   lastItemUseNotice?: string | null;
+  voteChoice?: VoteChoice | null;
   currentHp?: number;
   maxHp?: number;
   createdAt?: any;
@@ -325,6 +328,7 @@ export default function CharacterSheetPage() {
   const [activeGameCode, setActiveGameCode] = useState<string>("");
   const [activeGameScrap, setActiveGameScrap] = useState<number>(0);
   const [activeGameFuel, setActiveGameFuel] = useState<number>(0);
+  const [activeVote, setActiveVote] = useState<ActiveVote | null>(null);
 
   const fallbackMap = useMemo(() => {
     const m: Record<string, ItemResolved> = {};
@@ -423,6 +427,7 @@ export default function CharacterSheetPage() {
       setActiveGameCode("");
       setActiveGameScrap(0);
       setActiveGameFuel(0);
+      setActiveVote(null);
       return;
     }
 
@@ -433,17 +438,20 @@ export default function CharacterSheetPage() {
           setActiveGameCode("");
           setActiveGameScrap(0);
           setActiveGameFuel(0);
+          setActiveVote(null);
           return;
         }
         const data = gameSnap.data() as GameDoc;
         setActiveGameCode(data.code || "");
         setActiveGameScrap(typeof data.scrapAmount === "number" ? data.scrapAmount : 0);
         setActiveGameFuel(typeof data.jerryCanFuel === "number" ? data.jerryCanFuel : 0);
+        setActiveVote(data.activeVote ?? null);
       },
       () => {
         setActiveGameCode("");
         setActiveGameScrap(0);
         setActiveGameFuel(0);
+        setActiveVote(null);
       }
     );
 
@@ -613,6 +621,19 @@ export default function CharacterSheetPage() {
     });
   }
 
+  async function castVote(optionIndex: number) {
+    if (!character || !activeVote || activeVote.status !== "open") return;
+    if (optionIndex < 0 || optionIndex >= activeVote.options.length) return;
+
+    await persistCharacterPatch({
+      voteChoice: {
+        voteId: activeVote.id,
+        optionIndex,
+        votedAt: serverTimestamp(),
+      },
+    });
+  }
+
   async function dismissItemUseNotice() {
     await persistCharacterPatch({ lastItemUseNotice: null });
   }
@@ -766,6 +787,12 @@ export default function CharacterSheetPage() {
 
   /** Party resources show whenever you're in a game, whatever you personally carry. */
   const inGame = Boolean(character?.activeGameId);
+
+  /** This player's ballot, but only if it belongs to the vote currently on screen. */
+  const myVoteIndex =
+    activeVote && character?.voteChoice?.voteId === activeVote.id
+      ? character.voteChoice.optionIndex
+      : null;
 
   const heroSubtitle = [
     character?.raceName || null,
@@ -1554,6 +1581,42 @@ export default function CharacterSheetPage() {
           }
         }
       `}</style>
+
+      {activeVote && activeVote.status === "open" ? (
+        <div
+          className="wt-voteOverlay"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Party vote"
+        >
+          <div className="wt-voteCard">
+            <div>
+              <div className="wt-kicker">Party Vote</div>
+              <div className="wt-voteQuestion">{activeVote.question}</div>
+            </div>
+
+            <div className="wt-voteOptions">
+              {activeVote.options.map((option, index) => (
+                <button
+                  key={index}
+                  type="button"
+                  className="wt-voteOption"
+                  data-chosen={myVoteIndex === index}
+                  onClick={() => castVote(index)}
+                >
+                  {option}
+                </button>
+              ))}
+            </div>
+
+            <div className="wt-muted" style={{ fontSize: 12 }}>
+              {myVoteIndex === null
+                ? "Pick an option. Everyone at the table votes on their own sheet."
+                : "Answer locked in. You can change it until your GM closes the vote."}
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

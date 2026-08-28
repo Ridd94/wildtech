@@ -20,6 +20,14 @@ import { useAuth } from "@/hooks/useAuth";
 import { generateGameCode } from "@/lib/wildtech/games";
 import { GRAFT_CATALOG, type CharacterGraft } from "@/lib/wildtech/grafts";
 import { BLUEPRINT_CATALOG } from "@/lib/wildtech/blueprints";
+import {
+  VOTE_MAX_OPTIONS,
+  describeVoteProblem,
+  normaliseVoteOptions,
+  tallyVote,
+  type ActiveVote,
+  type VoteChoice,
+} from "@/lib/wildtech/votes";
 
 type StatMods = {
   ATT?: number;
@@ -60,6 +68,7 @@ type GameDoc = {
   savedRoster?: SavedRosterCharacter[];
   scrapAmount?: number;
   jerryCanFuel?: number;
+  activeVote?: ActiveVote | null;
 };
 
 type PendingItemUse = {
@@ -89,6 +98,7 @@ type CharacterDoc = {
   soulCharges?: number;
   fuel?: number;
   pendingItemUse?: PendingItemUse | null;
+  voteChoice?: VoteChoice | null;
   lastItemUseNotice?: string | null;
   activeGameId: string | null;
   currentHp?: number;
@@ -276,6 +286,9 @@ export default function GmPage() {
   const [scrapInput, setScrapInput] = useState("");
   const [jerryBusy, setJerryBusy] = useState(false);
   const [jerryInput, setJerryInput] = useState("");
+  const [voteQuestion, setVoteQuestion] = useState("");
+  const [voteOptions, setVoteOptions] = useState<string[]>(["", ""]);
+  const [voteBusy, setVoteBusy] = useState(false);
   const [startingKitBusy, setStartingKitBusy] = useState(false);
   const [startingKitMessage, setStartingKitMessage] = useState("");
   const [itemUseBusyId, setItemUseBusyId] = useState("");
@@ -676,6 +689,13 @@ export default function GmPage() {
     }, new Set<string>());
   }, [joinedCharacters]);
 
+  const activeVote = selectedGame?.activeVote ?? null;
+
+  const voteTally = useMemo(
+    () => (activeVote ? tallyVote(activeVote, joinedCharacters) : null),
+    [activeVote, joinedCharacters]
+  );
+
   const pendingItemUseRequests = useMemo(
     () => joinedCharacters.filter((c) => !!c.pendingItemUse),
     [joinedCharacters]
@@ -931,6 +951,81 @@ export default function GmPage() {
     const parsed = Number(value);
     if (!Number.isFinite(parsed)) return;
     await adjustPartyFuel(parsed);
+  }
+
+  async function launchVote() {
+    if (!selectedGame) return;
+
+    const options = normaliseVoteOptions(voteOptions);
+    const problem = describeVoteProblem(voteQuestion, options);
+    if (problem) {
+      setError(problem);
+      return;
+    }
+
+    const vote: ActiveVote = {
+      // A fresh id per launch is what makes stale ballots from the previous
+      // vote fall out of the tally instead of counting toward this one.
+      id:
+        typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+          ? crypto.randomUUID()
+          : `vote-${Date.now()}`,
+      question: voteQuestion.trim(),
+      options,
+      status: "open",
+      createdAt: new Date().toISOString(),
+    };
+
+    setVoteBusy(true);
+    setError("");
+
+    try {
+      await updateDoc(doc(db, "games", selectedGame.id), {
+        activeVote: vote,
+        updatedAt: serverTimestamp(),
+      });
+      setVoteQuestion("");
+      setVoteOptions(["", ""]);
+    } catch (err: any) {
+      console.error("[GM Dashboard] launchVote failed", {
+        message: err?.message,
+        code: err?.code,
+        gameId: selectedGame.id,
+        uid: user?.uid,
+        projectId: firebaseProjectId,
+      });
+      setError(err?.message || "Failed to start the vote.");
+    } finally {
+      setVoteBusy(false);
+    }
+  }
+
+  async function setVoteStatus(nextStatus: "closed" | null) {
+    if (!selectedGame?.activeVote) return;
+
+    setVoteBusy(true);
+    setError("");
+
+    try {
+      await updateDoc(doc(db, "games", selectedGame.id), {
+        activeVote:
+          nextStatus === null
+            ? null
+            : { ...selectedGame.activeVote, status: nextStatus, closedAt: new Date().toISOString() },
+        updatedAt: serverTimestamp(),
+      });
+    } catch (err: any) {
+      console.error("[GM Dashboard] setVoteStatus failed", {
+        message: err?.message,
+        code: err?.code,
+        gameId: selectedGame.id,
+        uid: user?.uid,
+        projectId: firebaseProjectId,
+      });
+      setError(err?.message || "Failed to update the vote.");
+    } finally {
+      setVoteBusy(false);
+    }
   }
 
   async function closeGame(gameId: string) {
@@ -2190,6 +2285,141 @@ export default function GmPage() {
                         Fill
                       </button>
                     </div>
+                  </div>
+
+                  <div className="wt-item">
+                    <div className="wt-kicker">Party Vote</div>
+
+                    {activeVote ? (
+                      <>
+                        <div className="wt-itemName">{activeVote.question}</div>
+                        <div className="wt-muted" style={{ fontSize: 12, marginBottom: 8 }}>
+                          {activeVote.status === "open"
+                            ? "Open — showing on every player's screen."
+                            : "Closed — players can no longer vote."}{" "}
+                          {voteTally ? `${voteTally.totalVotes}/${joinedCharacters.length} voted.` : ""}
+                        </div>
+
+                        <div style={{ display: "grid", gap: 10, marginBottom: 10 }}>
+                          {activeVote.options.map((option, index) => {
+                            const count = voteTally?.counts[index] ?? 0;
+                            const total = voteTally?.totalVotes ?? 0;
+                            const pct = total > 0 ? Math.round((count / total) * 100) : 0;
+                            const voters = voteTally?.voters[index] ?? [];
+
+                            return (
+                              <div key={index} style={{ display: "grid", gap: 4 }}>
+                                <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+                                  <span style={{ fontSize: 13 }}>{option}</span>
+                                  <strong style={{ fontSize: 13 }}>{count}</strong>
+                                </div>
+                                <div className="wt-voteBar">
+                                  <div className="wt-voteBarFill" style={{ width: `${pct}%` }} />
+                                </div>
+                                {voters.length > 0 ? (
+                                  <div className="wt-muted" style={{ fontSize: 11 }}>
+                                    {voters.join(", ")}
+                                  </div>
+                                ) : null}
+                              </div>
+                            );
+                          })}
+                        </div>
+
+                        {voteTally && voteTally.notVoted.length > 0 ? (
+                          <div className="wt-muted" style={{ fontSize: 11, marginBottom: 8 }}>
+                            Still to vote: {voteTally.notVoted.join(", ")}
+                          </div>
+                        ) : null}
+
+                        <div className="wt-chipRow">
+                          {activeVote.status === "open" ? (
+                            <button
+                              type="button"
+                              className="wt-btn wt-btnPrimary wt-btnSmall"
+                              onClick={() => setVoteStatus("closed")}
+                              disabled={voteBusy}
+                            >
+                              Close Vote
+                            </button>
+                          ) : null}
+                          <button
+                            type="button"
+                            className="wt-btn wt-btnSmall"
+                            onClick={() => setVoteStatus(null)}
+                            disabled={voteBusy}
+                          >
+                            Clear
+                          </button>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="wt-muted" style={{ fontSize: 12, marginBottom: 8 }}>
+                          Ask the party a question. It takes over every joined player&apos;s screen until
+                          you close it.
+                        </div>
+
+                        <textarea
+                          className="wt-input"
+                          placeholder="What should the party do?"
+                          value={voteQuestion}
+                          onChange={(e) => setVoteQuestion(e.target.value)}
+                          rows={2}
+                          style={{ width: "100%", marginBottom: 8, resize: "vertical" }}
+                        />
+
+                        <div style={{ display: "grid", gap: 6, marginBottom: 8 }}>
+                          {voteOptions.map((option, index) => (
+                            <div key={index} style={{ display: "flex", gap: 6 }}>
+                              <input
+                                className="wt-input"
+                                placeholder={`Option ${index + 1}`}
+                                value={option}
+                                onChange={(e) => {
+                                  const next = [...voteOptions];
+                                  next[index] = e.target.value;
+                                  setVoteOptions(next);
+                                }}
+                                style={{ flex: 1, minWidth: 0 }}
+                              />
+                              {voteOptions.length > 2 ? (
+                                <button
+                                  type="button"
+                                  className="wt-btn wt-btnSmall"
+                                  onClick={() => setVoteOptions(voteOptions.filter((_, i) => i !== index))}
+                                  aria-label={`Remove option ${index + 1}`}
+                                >
+                                  X
+                                </button>
+                              ) : null}
+                            </div>
+                          ))}
+                        </div>
+
+                        <div className="wt-chipRow">
+                          <button
+                            type="button"
+                            className="wt-btn wt-btnSmall"
+                            onClick={() => setVoteOptions([...voteOptions, ""])}
+                            disabled={voteOptions.length >= VOTE_MAX_OPTIONS}
+                          >
+                            Add Option
+                          </button>
+                          <button
+                            type="button"
+                            className="wt-btn wt-btnPrimary wt-btnSmall"
+                            onClick={launchVote}
+                            disabled={voteBusy}
+                          >
+                            Start Vote
+                          </button>
+                          <span className="wt-muted" style={{ fontSize: 11, alignSelf: "center" }}>
+                            {voteOptions.length}/{VOTE_MAX_OPTIONS} options
+                          </span>
+                        </div>
+                      </>
+                    )}
                   </div>
 
                   <div className="wt-item">
